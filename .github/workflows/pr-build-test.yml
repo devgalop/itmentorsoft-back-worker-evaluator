@@ -1,0 +1,94 @@
+name: PR Build & Test
+
+on:
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        id: tests
+        run: |
+          set -o pipefail
+          python -m pytest tests/ -v --tb=short 2>&1 | tee test-output.txt
+
+      - name: Determine result
+        id: result
+        if: always()
+        run: |
+          if [ "${{ steps.tests.outcome }}" == "success" ]; then
+            echo "status=✅ Tests Passed" >> $GITHUB_OUTPUT
+            echo "badge_color=green" >> $GITHUB_OUTPUT
+          else
+            echo "status=❌ Tests Failed" >> $GITHUB_OUTPUT
+            echo "badge_color=red" >> $GITHUB_OUTPUT
+          fi
+
+          # Extract summary line (e.g. "95 passed in 2.29s")
+          SUMMARY=$(tail -1 test-output.txt || echo "Could not read test output")
+          echo "summary=$SUMMARY" >> $GITHUB_OUTPUT
+
+      - name: Comment on PR
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            const output = fs.readFileSync('test-output.txt', 'utf8');
+            const status = '${{ steps.result.outputs.status }}';
+            const summary = '${{ steps.result.outputs.summary }}';
+            const sha = context.sha.substring(0, 7);
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            // Truncate output if too long (GitHub comment limit is 65536 chars)
+            const maxOutput = 30000;
+            const truncatedOutput = output.length > maxOutput
+              ? output.substring(output.length - maxOutput) + '\n\n... (output truncated)'
+              : output;
+
+            const body = [
+              `## ${status}`,
+              '',
+              `**Summary:** ${summary}`,
+              `**Commit:** \`${sha}\``,
+              `**Workflow:** [View run](${runUrl})`,
+              '',
+              '<details>',
+              '<summary>📋 Full test output</summary>',
+              '',
+              '```',
+              truncatedOutput,
+              '```',
+              '',
+              '</details>',
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body,
+            });

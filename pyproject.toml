@@ -1,0 +1,15 @@
+[project]
+name = "itmentorsoft-back-worker-evaluator"
+version = "0.1.0"
+authors = [{name = "devgalop"}]
+readme = "README.md"
+requires-python = ">=3.9"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ALL"]
+

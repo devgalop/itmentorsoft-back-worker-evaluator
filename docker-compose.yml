@@ -1,0 +1,45 @@
+services:
+
+  floci:
+    image: floci/floci:latest
+    container_name: floci
+    ports:
+      - "4566:4566"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - floci_data:/data
+
+  valkey:
+    image: valkey/valkey:8.1.9-alpine3.24
+    container_name: valkey
+    ports:
+      - "6379:6379"
+    command: valkey-server --requirepass ${VALKEY_PASSWORD}
+    volumes:
+      - valkey_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-a", "${VALKEY_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  evaluator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: worker-itmentorsoft-evaluator
+    env_file: .env
+    ports:
+      - "8002:8000"
+    depends_on:
+      valkey:
+        condition: service_healthy
+      floci:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  valkey_data:
+  floci_data:
