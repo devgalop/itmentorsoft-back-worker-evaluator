@@ -9,6 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from src.endpoints.init import router as endpoints_router
+from src.infrastructure.broker.aws.aws_sqs_classify_consumer import ClassifyConsumer
 from src.infrastructure.broker.aws.aws_sqs_create_queues import SqsCreator
 from src.infrastructure.broker.aws.aws_sqs_publisher import SqsPublisher
 from src.infrastructure.broker.aws.aws_sqs_qualify_consumer import SqsQualifyConsumer
@@ -35,9 +36,10 @@ async def lifespan(app: FastAPI):
         sqs_creator.create_queues()
         sqs_publisher = SqsPublisher(sqs_connection)
         await sqs_publisher.publish_sample_qualify_messages()
+        await sqs_publisher.publish_sample_classify_messages()
     print("SQS connection established.")
 
-    sqs_consumer = SqsConsumerService(
+    sqs_qualify_consumer = SqsConsumerService(
         sqs_client=sqs_connection,
         sqs_config=SqsConsumerConfig(
             queue_url=EnvironmentVariablesConstants.AWS_SQS_QUALIFY_QUEUE_URL,
@@ -53,12 +55,34 @@ async def lifespan(app: FastAPI):
         ),
         sqs_handler=SqsQualifyConsumer(),
     )
-    app.state.sqs_consumer = sqs_consumer
-    sqs_consumer.start_consumer()
+
+    sqs_classify_consumer = SqsConsumerService(
+        sqs_client=sqs_connection,
+        sqs_config=SqsConsumerConfig(
+            queue_url=EnvironmentVariablesConstants.AWS_SQS_CLASSIFY_QUEUE_URL,
+            max_messages=int(
+                EnvironmentVariablesConstants.CONSUMER_MAX_MESSAGES_PER_REQUEST
+            ),
+            wait_time_seconds=int(
+                EnvironmentVariablesConstants.CONSUMER_MAX_POOL_TIMEOUT
+            ),
+            is_enabled=True,
+            max_retries=int(EnvironmentVariablesConstants.CONSUMER_MAX_RETRIES),
+            dlq_url=EnvironmentVariablesConstants.AWS_SQS_CLASSIFY_DLQ_URL,
+        ),
+        sqs_handler=ClassifyConsumer(),
+    )
+    app.state.sqs_consumers = {
+        "qualify": sqs_qualify_consumer,
+        "classify": sqs_classify_consumer,
+    }
+    sqs_qualify_consumer.start_consumer()
+    sqs_classify_consumer.start_consumer()
     print("SQS consumer started.")
     yield
     print("Shutting down the application...")
-    await sqs_consumer.stop_consumer()
+    await sqs_qualify_consumer.stop_consumer()
+    await sqs_classify_consumer.stop_consumer()
     print("SQS consumer stopped.")
     print("Application shutdown complete.")
 

@@ -13,13 +13,19 @@ router = APIRouter()
     tags=["Consumer"],
     responses={200: {"model": ConsumerStatusResponse}},
 )
-async def enable_consumer(request: Request, status: bool) -> ConsumerStatusResponse:
-    request.app.state.sqs_consumer.sqs_config.is_enabled = status
+async def enable_consumer(
+    request: Request, consumer: str, status: bool
+) -> ConsumerStatusResponse:
+    if consumer not in request.app.state.sqs_consumers:
+        return ConsumerStatusResponse(
+            is_enabled=False, message=f"Consumer '{consumer}' not found"
+        )
+    request.app.state.sqs_consumers[consumer].sqs_config.is_enabled = status
     return ConsumerStatusResponse(
         is_enabled=status,
         message=(
-            "Consumer enabled successfully"
+            f"Consumer '{consumer}' enabled successfully"
             if status
-            else "Consumer disabled successfully"
+            else f"Consumer '{consumer}' disabled successfully"
         ),
     )
