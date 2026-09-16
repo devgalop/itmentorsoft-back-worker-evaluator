@@ -8,6 +8,10 @@ from common_py_aws import (
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from src.dependencies import (
+    get_classify_message_sanitizer,
+    get_qualify_message_sanitizer,
+)
 from src.endpoints.init import router as endpoints_router
 from src.infrastructure.broker.aws.aws_sqs_classify_consumer import ClassifyConsumer
 from src.infrastructure.broker.aws.aws_sqs_create_queues import SqsCreator
@@ -53,7 +57,7 @@ async def lifespan(app: FastAPI):
             max_retries=int(EnvironmentVariablesConstants.CONSUMER_MAX_RETRIES),
             dlq_url=EnvironmentVariablesConstants.AWS_SQS_QUALIFY_DLQ_URL,
         ),
-        sqs_handler=SqsQualifyConsumer(),
+        sqs_handler=SqsQualifyConsumer(get_qualify_message_sanitizer()),
     )
 
     sqs_classify_consumer = SqsConsumerService(
@@ -70,7 +74,7 @@ async def lifespan(app: FastAPI):
             max_retries=int(EnvironmentVariablesConstants.CONSUMER_MAX_RETRIES),
             dlq_url=EnvironmentVariablesConstants.AWS_SQS_CLASSIFY_DLQ_URL,
         ),
-        sqs_handler=ClassifyConsumer(),
+        sqs_handler=ClassifyConsumer(get_classify_message_sanitizer()),
     )
     app.state.sqs_consumers = {
         "qualify": sqs_qualify_consumer,
