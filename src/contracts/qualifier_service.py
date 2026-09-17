@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from enum import Enum
+from src.models.llm_models import AvailableProcesses
 
 from src.models.qualify_models import (
     QualifierPrompt,
@@ -46,14 +46,9 @@ class ModelExplorerService(ABC):
         pass
 
 
-class AvailableProcesses(Enum):
-    QUALIFIER = "qualifier"
-    CLASSIFIER = "classifier"
-
-
 class ModelSelectorService(ABC):
     @abstractmethod
-    def get_selected_model(self, process: AvailableProcesses) -> str:
+    async def get_selected_model(self, process: AvailableProcesses) -> str:
         """Fetches the currently selected model from the LLM Provider.
 
         Args:

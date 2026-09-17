@@ -1,4 +1,5 @@
-from src.features.shared.cache_service import CacheEntry, CacheService
+from src.models.cache_entry import CacheEntry
+from src.contracts.cache_service import CacheService
 from src.infrastructure.cache.valkey_client import ValkeyClient
 
 

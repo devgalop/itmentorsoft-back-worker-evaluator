@@ -17,6 +17,7 @@ from src.infrastructure.broker.aws.aws_sqs_classify_consumer import ClassifyCons
 from src.infrastructure.broker.aws.aws_sqs_create_queues import SqsCreator
 from src.infrastructure.broker.aws.aws_sqs_publisher import SqsPublisher
 from src.infrastructure.broker.aws.aws_sqs_qualify_consumer import SqsQualifyConsumer
+from src.infrastructure.cache.valkey_client import ValkeyClient
 from src.infrastructure.env_manager.env_manager import EnvironmentVariablesConstants
 
 
@@ -25,6 +26,15 @@ async def lifespan(app: FastAPI):
     print("Starting up the application...")
     print("Validating environment variables...")
     EnvironmentVariablesConstants.validate_mandatory_env_vars()
+
+    print("Initializing the cache service...")
+    cache_client = ValkeyClient()
+    await cache_client.connect()
+
+    app.state.valkey = cache_client
+
+    print("Cache service initialized.")
+
     print("Creating SQS connection...")
     sqs_connection_factory = SqsConnectionFactoryService(
         SqsConnectionRequest(
