@@ -37,6 +37,10 @@ class EnvironmentVariablesConstants:
         "DATABASE_ADMIN_USERNAME",
         "DATABASE_ADMIN_PASSWORD",
         "DATABASE_ADMIN_EMAIL",
+        "VALKEY_HOST",
+        "VALKEY_PORT",
+        "VALKEY_PASSWORD",
+        "VALKEY_DB",
     ]
 
     ENVIRONMENT = os.getenv("ENVIRONMENT", "")
@@ -77,6 +81,11 @@ class EnvironmentVariablesConstants:
     DATABASE_ADMIN_USERNAME = os.getenv("DATABASE_ADMIN_USERNAME", "")
     DATABASE_ADMIN_PASSWORD = os.getenv("DATABASE_ADMIN_PASSWORD", "")
     DATABASE_ADMIN_EMAIL = os.getenv("DATABASE_ADMIN_EMAIL", "")
+
+    VALKEY_HOST = os.getenv("VALKEY_HOST", "")
+    VALKEY_PORT = os.getenv("VALKEY_PORT", "")
+    VALKEY_PASSWORD = os.getenv("VALKEY_PASSWORD", "")
+    VALKEY_DB = os.getenv("VALKEY_DB", "")
 
     @staticmethod
     def validate_mandatory_env_vars():
