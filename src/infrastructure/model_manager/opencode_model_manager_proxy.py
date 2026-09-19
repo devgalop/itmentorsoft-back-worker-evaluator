@@ -1,6 +1,9 @@
 import json
 from src.contracts.cache_service import CacheService
 from src.contracts.qualifier_service import ModelExplorerService, ModelSelectorService
+from src.infrastructure.model_manager.opencode_model_manager import (
+    OpencodeModelManagerService,
+)
 from src.models.cache_entry import CacheEntry
 from src.models.llm_models import AvailableProcesses
 from src.infrastructure.env_manager.env_manager import EnvironmentVariablesConstants
@@ -19,11 +22,9 @@ class OpencodeModelsManagerProxy(ModelExplorerService, ModelSelectorService):
     PREFIX_MODEL_SELECTED: str = "selected_model"
     PREFIX_ALL_MODELS: str = "all"
 
-    def __init__(
-        self, cache_service: CacheService, models_manager_service: ModelExplorerService
-    ):
+    def __init__(self, cache_service: CacheService):
         self.cache_service = cache_service
-        self.models_manager_service = models_manager_service
+        self.models_manager_service = OpencodeModelManagerService()
 
     async def get_available_models(self) -> list[str]:
         key = f"{self.CACHE_KEY_MODELS}:{self.PREFIX_ALL_MODELS}"
@@ -46,7 +47,8 @@ class OpencodeModelsManagerProxy(ModelExplorerService, ModelSelectorService):
         key = f"{self.CACHE_KEY_MODELS}:{self.PREFIX_MODEL_SELECTED}:{process.value}"
         value_cached = await self.cache_service.get(key)
         if value_cached:
-            return json.loads(value_cached.value)
+            # Note: The cached value is returned directly as a string, not as a JSON object.
+            return value_cached.value
 
         # If the selected model is not cached, return the default model
         model_selected = EnvironmentVariablesConstants.OPENCODE_DEFAULT_MODEL

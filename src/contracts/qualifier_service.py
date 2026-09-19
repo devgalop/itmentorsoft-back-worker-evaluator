@@ -1,10 +1,11 @@
 from abc import ABC, abstractmethod
+
+from itmentorsoft_persistence import QualifierResult
 from src.models.llm_models import AvailableProcesses
 
 from src.models.qualify_models import (
     QualifierPrompt,
     BatchQualifierPrompt,
-    QualifierResult,
 )
 
 

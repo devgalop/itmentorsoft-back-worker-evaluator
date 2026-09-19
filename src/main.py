@@ -9,8 +9,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from src.dependencies import (
+    get_cache_service,
     get_classify_message_sanitizer,
+    get_model_explorer_service,
     get_qualify_message_sanitizer,
+    get_qualify_service,
 )
 from src.endpoints.init import router as endpoints_router
 from src.infrastructure.broker.aws.aws_sqs_classify_consumer import ClassifyConsumer
@@ -32,8 +35,14 @@ async def lifespan(app: FastAPI):
     await cache_client.connect()
 
     app.state.valkey = cache_client
-
     print("Cache service initialized.")
+
+    print("Loading available models...")
+    model_explorer_service = get_model_explorer_service(
+        cache_service=get_cache_service(client=cache_client)
+    )
+    await model_explorer_service.get_available_models()
+    print("Available models loaded.")
 
     print("Creating SQS connection...")
     sqs_connection_factory = SqsConnectionFactoryService(
@@ -50,7 +59,7 @@ async def lifespan(app: FastAPI):
         sqs_creator.create_queues()
         sqs_publisher = SqsPublisher(sqs_connection)
         await sqs_publisher.publish_sample_qualify_messages()
-        await sqs_publisher.publish_sample_classify_messages()
+        # await sqs_publisher.publish_sample_classify_messages()
     print("SQS connection established.")
 
     sqs_qualify_consumer = SqsConsumerService(
@@ -67,7 +76,9 @@ async def lifespan(app: FastAPI):
             max_retries=int(EnvironmentVariablesConstants.CONSUMER_MAX_RETRIES),
             dlq_url=EnvironmentVariablesConstants.AWS_SQS_QUALIFY_DLQ_URL,
         ),
-        sqs_handler=SqsQualifyConsumer(get_qualify_message_sanitizer()),
+        sqs_handler=SqsQualifyConsumer(
+            get_qualify_message_sanitizer(), get_qualify_service()
+        ),
     )
 
     sqs_classify_consumer = SqsConsumerService(

@@ -72,6 +72,7 @@ class EnvironmentVariablesConstants:
         "ASSESSMENT_QUALIFICATION_CHUNK_SIZE", ""
     )
     ASSESSMENT_MAX_QUESTIONS_NUMBER = os.getenv("ASSESSMENT_MAX_QUESTIONS_NUMBER", "")
+    EVALUATION_MODE = os.getenv("EVALUATION_MODE", "normal")
 
     DATABASE_URL = os.getenv("DATABASE_URL", "")
     DB_POOL_SIZE = os.getenv("DB_POOL_SIZE", "")

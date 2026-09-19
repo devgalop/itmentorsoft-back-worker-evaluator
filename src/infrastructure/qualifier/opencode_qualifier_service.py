@@ -8,8 +8,8 @@ from src.models.qualify_models import (
     BatchQualificationError,
     QualifierPrompt,
     BatchQualifierPrompt,
-    QualifierResult,
 )
+from itmentorsoft_persistence import QualifierResult
 from src.contracts.qualifier_service import QualifierService
 from src.infrastructure.env_manager.env_manager import EnvironmentVariablesConstants
 
