@@ -5,14 +5,14 @@ import time
 from itmentorsoft_persistence import (
     Assessment,
     AssessmentAnswer,
-    AssessmentRepository,
     AsyncSessionLocal,
     PostgresAssessmentMapper,
     PostgresQuestionMapper,
-    QuestionRepository,
     TopicResult,
     QualifierResult,
 )
+from itmentorsoft_persistence.repositories import QualificationRepository
+from src.contracts.cache_service import CacheService
 from src.contracts.input_message import InputMessage
 from src.contracts.qualifier_service import (
     ModelExplorerService,
@@ -21,11 +21,8 @@ from src.contracts.qualifier_service import (
 )
 from src.infrastructure.cache.valkey_cache_service import ValkeyCacheService
 from src.infrastructure.cache.valkey_client import ValkeyClient
-from src.infrastructure.databases.postgresql.postgres_assessment_repository import (
-    PostgresAssessmentRepository,
-)
-from src.infrastructure.databases.postgresql.postgres_questions_repository import (
-    PostgresQuestionsRepository,
+from src.infrastructure.databases.postgresql.postgres_qualification_repository import (
+    PostgresQualificationRepository,
 )
 from src.infrastructure.env_manager.env_manager import EnvironmentVariablesConstants
 from src.infrastructure.model_manager.opencode_model_manager_proxy import (
@@ -34,6 +31,7 @@ from src.infrastructure.model_manager.opencode_model_manager_proxy import (
 from src.infrastructure.qualifier.opencode_qualifier_service import (
     OpencodeQualifierService,
 )
+from src.models.cache_entry import CacheEntry
 from src.models.classify_models import QuestionAnswerQualification
 from src.models.llm_models import AvailableProcesses
 from src.models.qualify_assessment_request import QualifyAssessmentRequest
@@ -42,32 +40,51 @@ from src.models.qualify_models import (
     BatchQualifierPrompt,
     QualifierPrompt,
 )
+from src.models.qualify_response import QualifyResponse
 
 
 class QualifyService:
     ASSESSMENT_QUALIFICATION_CHUNK_SIZE = int(
         EnvironmentVariablesConstants.ASSESSMENT_QUALIFICATION_CHUNK_SIZE
     )
+    ASSESSMENT_QUALIFICATION_TTL = int(
+        EnvironmentVariablesConstants.ASSESSMENT_QUALIFICATION_TTL
+    )
 
     def __init__(self):
-        self.assessment_repository: AssessmentRepository | None = None
-        self.question_repository: QuestionRepository | None = None
+        self.qualification_repository: QualificationRepository | None = None
         self.qualifier_service: QualifierService | None = None
         self.model_selector_service: ModelSelectorService | None = None
         self.model_explorer_service: ModelExplorerService | None = None
 
-    async def evaluate(self, request: InputMessage):
+    async def evaluate(self, request: InputMessage) -> QualifyResponse:
         assessment = QualifyAssessmentRequest(**json.loads(request.get_content()))
         cache_client = ValkeyClient()
         await cache_client.connect()
         cache_service = ValkeyCacheService(cache_client)
+
+        if await self.is_being_processed(cache_service, assessment.assessment_id):
+            print(
+                f"Assessment {assessment.assessment_id} is currently being processed."
+            )
+            return QualifyResponse(
+                is_success=False,
+                message=f"Assessment {assessment.assessment_id} is currently being processed.",
+            )
+
         async with AsyncSessionLocal() as session:
-            self.assessment_repository = PostgresAssessmentRepository(
-                session, PostgresAssessmentMapper
+            self.qualification_repository = PostgresQualificationRepository(
+                session, PostgresAssessmentMapper, PostgresQuestionMapper
             )
-            self.question_repository = PostgresQuestionsRepository(
-                session, PostgresQuestionMapper
-            )
+
+            if await self.is_already_processed(assessment.assessment_id):
+                print(
+                    f"Assessment {assessment.assessment_id} has already been processed."
+                )
+                return QualifyResponse(
+                    is_success=False,
+                    message=f"Assessment {assessment.assessment_id} has already been processed.",
+                )
 
             self.model_selector_service = OpencodeModelsManagerProxy(cache_service)
             self.model_explorer_service = OpencodeModelsManagerProxy(cache_service)
@@ -75,8 +92,9 @@ class QualifyService:
             qualifier_model = await self.model_selector_service.get_selected_model(
                 AvailableProcesses.QUALIFIER
             )
-
+            await self.mark_as_being_processed(cache_service, assessment.assessment_id)
             self.qualifier_service = OpencodeQualifierService(qualifier_model)
+            print(f"Starting evaluation of assessment {assessment.assessment_id}")
             start_time = time.perf_counter()
             evaluation_results: list[QualifierResult] = await self.qualify_assessment(
                 assessment
@@ -84,17 +102,86 @@ class QualifyService:
             end_time = time.perf_counter()
             evaluation_duration = end_time - start_time
             print(
-                f"Evaluation of assessment {assessment.assessment_id} took {evaluation_duration:.6f} seconds."
+                f"Evaluation of assessment {assessment.assessment_id} took {evaluation_duration:.3f} seconds."
             )
             if not evaluation_results:
-                raise BatchQualificationError(
-                    f"Failed to evaluate assessment {assessment.assessment_id}."
+                await self.unmark_as_being_processed(
+                    cache_service, assessment.assessment_id
+                )
+                return QualifyResponse(
+                    is_success=False,
+                    message=f"Failed to evaluate assessment {assessment.assessment_id}.",
                 )
             await self.save_assessment_results(evaluation_results)
             topic_results: list[TopicResult] = self.get_knowledge_profile(
                 assessment.user_id, evaluation_results
             )
             await self.save_knowledge_profile(topic_results)
+            await self.unmark_as_being_processed(
+                cache_service, assessment.assessment_id
+            )
+            return QualifyResponse(
+                is_success=True,
+                message=f"Assessment {assessment.assessment_id} evaluated successfully.",
+            )
+
+    async def unmark_as_being_processed(
+        self, cache_service: CacheService, assessment_id: str
+    ) -> None:
+        """Remove the assessment from the currently being processed state in the cache.
+
+        Args:
+            assessment_id (str): The ID of the assessment to unmark.
+        """
+        if not cache_service or not assessment_id:
+            return
+        key = f"assessment:{assessment_id}"
+        await cache_service.delete(key)
+
+    async def mark_as_being_processed(
+        self, cache_service: CacheService, assessment_id: str
+    ) -> None:
+        """Mark the assessment as currently being processed in the cache.
+
+        Args:
+            assessment_id (str): The ID of the assessment to mark.
+        """
+        if not cache_service or not assessment_id:
+            return
+        key = f"assessment:{assessment_id}"
+        await cache_service.set(
+            key, CacheEntry(value="processing", ttl=self.ASSESSMENT_QUALIFICATION_TTL)
+        )
+
+    async def is_being_processed(
+        self, cache_service: CacheService, assessment_id: str
+    ) -> bool:
+        """Check if the assessment is currently being processed.
+
+        Args:
+            assessment_id (str): The ID of the assessment to check.
+
+        Returns:
+            bool: True if the assessment is currently being processed, False otherwise.
+        """
+        if not cache_service or not assessment_id:
+            return False
+        key = f"assessment:{assessment_id}"
+        value_cached = await cache_service.get(key)
+        return value_cached is not None
+
+    async def is_already_processed(self, assessment_id: str) -> bool:
+        """Check if the assessment has already qualified
+
+        Args:
+            assessment_id (str): The ID of the assessment to check.
+
+        Returns:
+            bool: True if the assessment has already been processed, False otherwise.
+        """
+        if not self.qualification_repository or not assessment_id:
+            return False
+        return await self.qualification_repository.is_already_qualified(assessment_id)
 
     async def qualify_assessment(
         self, assessment: QualifyAssessmentRequest
@@ -110,9 +197,9 @@ class QualifyService:
         Returns:
             list[QualifierResult]: A list of results from the qualifier service.
         """
-        if not self.question_repository or not self.qualifier_service:
+        if not self.qualification_repository or not self.qualifier_service:
             raise RuntimeError(
-                "Question repository and qualifier service must be initialized before calling qualify_assessment."
+                "Qualification repository and qualifier service must be initialized before calling qualify_assessment."
             )
 
         evaluation_results: list[QualifierResult] = []
@@ -122,7 +209,7 @@ class QualifyService:
         if not question_ids:
             return evaluation_results
 
-        rubrics_dict = await self.question_repository.get_question_rubrics_bulk(
+        rubrics_dict = await self.qualification_repository.get_question_rubrics_bulk(
             question_ids
         )
         if not rubrics_dict:
@@ -192,12 +279,12 @@ class QualifyService:
         Args:
             results (list[QualifierResult]): A list of results from the qualifier service.
         """
-        if not self.assessment_repository:
+        if not self.qualification_repository:
             raise RuntimeError(
                 "Assessment repository must be initialized before calling save_assessment_results."
             )
         for result in results:
-            await self.assessment_repository.save_assessment_qualification(result)
+            await self.qualification_repository.save_assessment_qualification(result)
 
     def get_knowledge_profile(
         self, user_id: str, results: list[QualifierResult]
@@ -231,12 +318,12 @@ class QualifyService:
         Args:
             topic_results (list[TopicResult]): Topic results to save.
         """
-        if not self.assessment_repository:
+        if not self.qualification_repository:
             raise RuntimeError(
-                "Assessment repository must be initialized before calling save_knowledge_profile."
+                "Qualification repository must be initialized before calling save_knowledge_profile."
             )
         for topic_result in topic_results:
-            await self.assessment_repository.save_topic_result(topic_result)
+            await self.qualification_repository.save_topic_result(topic_result)
 
     def get_answer_qualifications(
         self, assessment: Assessment, evaluation_results: list[QualifierResult]

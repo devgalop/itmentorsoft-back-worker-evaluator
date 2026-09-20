@@ -15,8 +15,9 @@ class SqsQualifyConsumer(ConsumerHandler):
             print(f"Processing message: {message.body}")
             sanitized_message = self.message_sanitizer.sanitize(message.body)
             print(f"Sanitized message: {sanitized_message.get_content()}")
-            await self.service.evaluate(sanitized_message)
-            return True
+            result = await self.service.evaluate(sanitized_message)
+            print(f"Evaluation result: {result.message}")
+            return result.is_success
         except ValueError as e:
             print(f"Message validation failed: {e}")
             return False

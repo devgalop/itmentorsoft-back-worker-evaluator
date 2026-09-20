@@ -75,6 +75,9 @@ async def lifespan(app: FastAPI):
             is_enabled=True,
             max_retries=int(EnvironmentVariablesConstants.CONSUMER_MAX_RETRIES),
             dlq_url=EnvironmentVariablesConstants.AWS_SQS_QUALIFY_DLQ_URL,
+            visibility_timeout_seconds=int(
+                EnvironmentVariablesConstants.CONSUMER_MESSAGES_VISIBILITY_TIMEOUT
+            ),
         ),
         sqs_handler=SqsQualifyConsumer(
             get_qualify_message_sanitizer(), get_qualify_service()
@@ -94,6 +97,9 @@ async def lifespan(app: FastAPI):
             is_enabled=True,
             max_retries=int(EnvironmentVariablesConstants.CONSUMER_MAX_RETRIES),
             dlq_url=EnvironmentVariablesConstants.AWS_SQS_CLASSIFY_DLQ_URL,
+            visibility_timeout_seconds=int(
+                EnvironmentVariablesConstants.CONSUMER_MESSAGES_VISIBILITY_TIMEOUT
+            ),
         ),
         sqs_handler=ClassifyConsumer(get_classify_message_sanitizer()),
     )
