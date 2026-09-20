@@ -18,7 +18,6 @@ from src.dependencies import (
 from src.endpoints.init import router as endpoints_router
 from src.infrastructure.broker.aws.aws_sqs_classify_consumer import ClassifyConsumer
 from src.infrastructure.broker.aws.aws_sqs_create_queues import SqsCreator
-from src.infrastructure.broker.aws.aws_sqs_publisher import SqsPublisher
 from src.infrastructure.broker.aws.aws_sqs_qualify_consumer import SqsQualifyConsumer
 from src.infrastructure.cache.valkey_client import ValkeyClient
 from src.infrastructure.env_manager.env_manager import EnvironmentVariablesConstants
@@ -57,9 +56,7 @@ async def lifespan(app: FastAPI):
     if EnvironmentVariablesConstants.ENVIRONMENT == "dev":
         sqs_creator = SqsCreator(sqs_connection)
         sqs_creator.create_queues()
-        sqs_publisher = SqsPublisher(sqs_connection)
-        await sqs_publisher.publish_sample_qualify_messages()
-        # await sqs_publisher.publish_sample_classify_messages()
+
     print("SQS connection established.")
 
     sqs_qualify_consumer = SqsConsumerService(

@@ -1,5 +1,4 @@
 import json
-
 from pydantic import BaseModel, field_validator
 
 from src.contracts.input_message import InputMessage

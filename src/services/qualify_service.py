@@ -2,8 +2,14 @@ from collections import defaultdict
 import json
 import time
 
+from common_py_aws import (
+    PublisherService,
+    SqsConnection,
+    SqsConnectionFactoryService,
+    SqsConnectionRequest,
+    SqsPublisherService,
+)
 from itmentorsoft_persistence import (
-    Assessment,
     AssessmentAnswer,
     AsyncSessionLocal,
     PostgresAssessmentMapper,
@@ -32,7 +38,7 @@ from src.infrastructure.qualifier.opencode_qualifier_service import (
     OpencodeQualifierService,
 )
 from src.models.cache_entry import CacheEntry
-from src.models.classify_models import QuestionAnswerQualification
+from src.models.classify_message import ClassifyMessage, QualificationResult
 from src.models.llm_models import AvailableProcesses
 from src.models.qualify_assessment_request import QualifyAssessmentRequest
 from src.models.qualify_models import (
@@ -56,14 +62,18 @@ class QualifyService:
         self.qualifier_service: QualifierService | None = None
         self.model_selector_service: ModelSelectorService | None = None
         self.model_explorer_service: ModelExplorerService | None = None
+        self.cache_service: CacheService | None = None
+        self.publisher_service: PublisherService = SqsPublisherService(
+            self.create_sqs_client()
+        )
 
     async def evaluate(self, request: InputMessage) -> QualifyResponse:
         assessment = QualifyAssessmentRequest(**json.loads(request.get_content()))
         cache_client = ValkeyClient()
         await cache_client.connect()
-        cache_service = ValkeyCacheService(cache_client)
+        self.cache_service = ValkeyCacheService(cache_client)
 
-        if await self.is_being_processed(cache_service, assessment.assessment_id):
+        if await self.is_being_processed(assessment.assessment_id):
             print(
                 f"Assessment {assessment.assessment_id} is currently being processed."
             )
@@ -86,13 +96,13 @@ class QualifyService:
                     message=f"Assessment {assessment.assessment_id} has already been processed.",
                 )
 
-            self.model_selector_service = OpencodeModelsManagerProxy(cache_service)
-            self.model_explorer_service = OpencodeModelsManagerProxy(cache_service)
+            self.model_selector_service = OpencodeModelsManagerProxy(self.cache_service)
+            self.model_explorer_service = OpencodeModelsManagerProxy(self.cache_service)
 
             qualifier_model = await self.model_selector_service.get_selected_model(
                 AvailableProcesses.QUALIFIER
             )
-            await self.mark_as_being_processed(cache_service, assessment.assessment_id)
+            await self.mark_as_being_processed(assessment.assessment_id)
             self.qualifier_service = OpencodeQualifierService(qualifier_model)
             print(f"Starting evaluation of assessment {assessment.assessment_id}")
             start_time = time.perf_counter()
@@ -105,9 +115,7 @@ class QualifyService:
                 f"Evaluation of assessment {assessment.assessment_id} took {evaluation_duration:.3f} seconds."
             )
             if not evaluation_results:
-                await self.unmark_as_being_processed(
-                    cache_service, assessment.assessment_id
-                )
+                await self.unmark_as_being_processed(assessment.assessment_id)
                 return QualifyResponse(
                     is_success=False,
                     message=f"Failed to evaluate assessment {assessment.assessment_id}.",
@@ -117,45 +125,63 @@ class QualifyService:
                 assessment.user_id, evaluation_results
             )
             await self.save_knowledge_profile(topic_results)
-            await self.unmark_as_being_processed(
-                cache_service, assessment.assessment_id
+            await self.unmark_as_being_processed(assessment.assessment_id)
+
+            qualification_answer_results = self.get_answer_qualifications(
+                assessment, evaluation_results
             )
+
+            await self.publisher_service.publish(
+                ClassifyMessage(qualification_results=qualification_answer_results)
+            )
+
             return QualifyResponse(
                 is_success=True,
                 message=f"Assessment {assessment.assessment_id} evaluated successfully.",
             )
 
-    async def unmark_as_being_processed(
-        self, cache_service: CacheService, assessment_id: str
-    ) -> None:
+    def create_sqs_client(self) -> SqsConnection:
+        """Create and return an SQS client connection.
+
+        Returns:
+            SqsConnection: The SQS client connection.
+        """
+        sqs_connection_factory = SqsConnectionFactoryService(
+            SqsConnectionRequest(
+                EnvironmentVariablesConstants.AWS_ENDPOINT_URL,
+                EnvironmentVariablesConstants.AWS_ACCESS_KEY_ID,
+                EnvironmentVariablesConstants.AWS_SECRET_ACCESS_KEY,
+                EnvironmentVariablesConstants.AWS_REGION,
+            )
+        )
+        sqs_connection = sqs_connection_factory.create_connection()
+        return sqs_connection
+
+    async def unmark_as_being_processed(self, assessment_id: str) -> None:
         """Remove the assessment from the currently being processed state in the cache.
 
         Args:
             assessment_id (str): The ID of the assessment to unmark.
         """
-        if not cache_service or not assessment_id:
+        if not self.cache_service or not assessment_id:
             return
         key = f"assessment:{assessment_id}"
-        await cache_service.delete(key)
+        await self.cache_service.delete(key)
 
-    async def mark_as_being_processed(
-        self, cache_service: CacheService, assessment_id: str
-    ) -> None:
+    async def mark_as_being_processed(self, assessment_id: str) -> None:
         """Mark the assessment as currently being processed in the cache.
 
         Args:
             assessment_id (str): The ID of the assessment to mark.
         """
-        if not cache_service or not assessment_id:
+        if not self.cache_service or not assessment_id:
             return
         key = f"assessment:{assessment_id}"
-        await cache_service.set(
+        await self.cache_service.set(
             key, CacheEntry(value="processing", ttl=self.ASSESSMENT_QUALIFICATION_TTL)
         )
 
-    async def is_being_processed(
-        self, cache_service: CacheService, assessment_id: str
-    ) -> bool:
+    async def is_being_processed(self, assessment_id: str) -> bool:
         """Check if the assessment is currently being processed.
 
         Args:
@@ -164,10 +190,10 @@ class QualifyService:
         Returns:
             bool: True if the assessment is currently being processed, False otherwise.
         """
-        if not cache_service or not assessment_id:
+        if not self.cache_service or not assessment_id:
             return False
         key = f"assessment:{assessment_id}"
-        value_cached = await cache_service.get(key)
+        value_cached = await self.cache_service.get(key)
         return value_cached is not None
 
     async def is_already_processed(self, assessment_id: str) -> bool:
@@ -326,26 +352,28 @@ class QualifyService:
             await self.qualification_repository.save_topic_result(topic_result)
 
     def get_answer_qualifications(
-        self, assessment: Assessment, evaluation_results: list[QualifierResult]
-    ) -> list[QuestionAnswerQualification]:
+        self,
+        assessment: QualifyAssessmentRequest,
+        evaluation_results: list[QualifierResult],
+    ) -> list[QualificationResult]:
         """Combine assessment answers with their corresponding evaluation results.
 
         Args:
-            assessment (Assessment): The assessment containing the answers.
+            assessment (QualifyAssessmentRequest): The assessment containing the answers.
             evaluation_results (list[QualifierResult]): Results from the qualifier service.
 
         Returns:
-            list[QuestionAnswerQualification]: A list of question answer qualifications.
+            list[QualificationResult]: A list of question answer qualifications.
         """
         # Create a mapping from answer_id to QualifierResult for quick lookup
         result_map = {result.answer_id: result for result in evaluation_results}
 
-        qualifications: list[QuestionAnswerQualification] = []
+        qualifications: list[QualificationResult] = []
         for answer in assessment.answers:
             if answer.answer_id in result_map:
                 result = result_map[answer.answer_id]
                 qualifications.append(
-                    QuestionAnswerQualification(
+                    QualificationResult(
                         question_id=answer.question_id,
                         user_id=assessment.user_id,
                         assessment_id=assessment.assessment_id,
