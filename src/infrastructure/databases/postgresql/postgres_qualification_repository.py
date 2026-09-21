@@ -33,6 +33,11 @@ class PostgresQualificationRepository(QualificationRepository):
         self.question_mapper = question_mapper
 
     async def save_assessment_qualification(self, qualifier_result: QualifierResult):
+        is_already_qualified = await self.is_already_qualified(
+            qualifier_result.assessment_id
+        )
+        if is_already_qualified:
+            return
         qualification_entity = self.mapper.qualifier_result_to_entity(qualifier_result)
         self.session_factory.add(qualification_entity)
         for key_concept in qualifier_result.key_concepts_detected:
@@ -85,6 +90,4 @@ class PostgresQualificationRepository(QualificationRepository):
         )
         result = await self.session_factory.execute(smt)
         entity_found = result.scalars().all()
-        if not entity_found:
-            return False
-        return True
+        return bool(entity_found)

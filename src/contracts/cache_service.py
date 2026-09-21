@@ -31,3 +31,14 @@ class CacheService(ABC):
         :param key: The key of the value to delete.
         """
         pass
+
+    @abstractmethod
+    async def set_if_not_exists(self, key: str, cache_entry: CacheEntry) -> bool:
+        """
+        Set a value in the cache only if it does not already exist.
+
+        :param key: The key under which to store the value.
+        :param cache_entry: The cache entry to store, including its value and optional TTL.
+        :return: True if the value was set, False if it already exists.
+        """
+        pass

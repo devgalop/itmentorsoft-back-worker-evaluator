@@ -61,65 +61,71 @@ class QualifyService:
 
     async def evaluate(self, request: InputMessage) -> QualifyResponse:
         assessment = QualifyAssessmentRequest(**json.loads(request.get_content()))
+        try:
+            async with AsyncSessionLocal() as session:
+                self.qualification_repository = self.qualification_repository_factory(
+                    session
+                )
 
-        async with AsyncSessionLocal() as session:
-            self.qualification_repository = self.qualification_repository_factory(
-                session
-            )
+                if await self.is_already_processed(assessment.assessment_id):
+                    print(
+                        f"Assessment {assessment.assessment_id} has already been processed."
+                    )
+                    return QualifyResponse(
+                        is_success=True,
+                        message=f"Assessment {assessment.assessment_id} has already been processed.",
+                    )
 
-            if await self.is_already_processed(assessment.assessment_id):
+                if await self.is_being_processed(assessment.assessment_id):
+                    print(
+                        f"Assessment {assessment.assessment_id} is currently being processed."
+                    )
+                    return QualifyResponse(
+                        is_success=True,
+                        message=f"Assessment {assessment.assessment_id} is currently being processed.",
+                    )
+
+                print(f"Starting evaluation of assessment {assessment.assessment_id}")
+                start_time = time.perf_counter()
+                evaluation_results: list[QualifierResult] = (
+                    await self.qualify_assessment(assessment)
+                )
+                end_time = time.perf_counter()
+                evaluation_duration = end_time - start_time
                 print(
-                    f"Assessment {assessment.assessment_id} has already been processed."
+                    f"Evaluation of assessment {assessment.assessment_id} took {evaluation_duration:.3f} seconds."
                 )
-                return QualifyResponse(
-                    is_success=True,
-                    message=f"Assessment {assessment.assessment_id} has already been processed.",
+                if not evaluation_results:
+                    await self.unmark_as_being_processed(assessment.assessment_id)
+                    return QualifyResponse(
+                        is_success=False,
+                        message=f"Failed to evaluate assessment {assessment.assessment_id}.",
+                    )
+                await self.save_assessment_results(evaluation_results)
+                topic_results: list[TopicResult] = self.get_knowledge_profile(
+                    assessment.user_id, evaluation_results
                 )
-
-            if await self.is_being_processed(assessment.assessment_id):
-                print(
-                    f"Assessment {assessment.assessment_id} is currently being processed."
-                )
-                return QualifyResponse(
-                    is_success=True,
-                    message=f"Assessment {assessment.assessment_id} is currently being processed.",
-                )
-
-            await self.mark_as_being_processed(assessment.assessment_id)
-            print(f"Starting evaluation of assessment {assessment.assessment_id}")
-            start_time = time.perf_counter()
-            evaluation_results: list[QualifierResult] = await self.qualify_assessment(
-                assessment
-            )
-            end_time = time.perf_counter()
-            evaluation_duration = end_time - start_time
-            print(
-                f"Evaluation of assessment {assessment.assessment_id} took {evaluation_duration:.3f} seconds."
-            )
-            if not evaluation_results:
+                await self.save_knowledge_profile(topic_results)
                 await self.unmark_as_being_processed(assessment.assessment_id)
-                return QualifyResponse(
-                    is_success=False,
-                    message=f"Failed to evaluate assessment {assessment.assessment_id}.",
+
+                qualification_answer_results = self.get_answer_qualifications(
+                    assessment, evaluation_results
                 )
-            await self.save_assessment_results(evaluation_results)
-            topic_results: list[TopicResult] = self.get_knowledge_profile(
-                assessment.user_id, evaluation_results
-            )
-            await self.save_knowledge_profile(topic_results)
+
+                await self.publisher_service.publish(
+                    ClassifyMessage(qualification_results=qualification_answer_results)
+                )
+
+                return QualifyResponse(
+                    is_success=True,
+                    message=f"Assessment {assessment.assessment_id} evaluated successfully.",
+                )
+        except Exception as e:
             await self.unmark_as_being_processed(assessment.assessment_id)
-
-            qualification_answer_results = self.get_answer_qualifications(
-                assessment, evaluation_results
-            )
-
-            await self.publisher_service.publish(
-                ClassifyMessage(qualification_results=qualification_answer_results)
-            )
-
+            print(f"Error while evaluating assessment: {e}")
             return QualifyResponse(
-                is_success=True,
-                message=f"Assessment {assessment.assessment_id} evaluated successfully.",
+                is_success=False,
+                message=f"Error while evaluating assessment: {e}",
             )
 
     async def unmark_as_being_processed(self, assessment_id: str) -> None:
@@ -133,19 +139,6 @@ class QualifyService:
         key = f"assessment:{assessment_id}"
         await self.cache_service.delete(key)
 
-    async def mark_as_being_processed(self, assessment_id: str) -> None:
-        """Mark the assessment as currently being processed in the cache.
-
-        Args:
-            assessment_id (str): The ID of the assessment to mark.
-        """
-        if not self.cache_service or not assessment_id:
-            return
-        key = f"assessment:{assessment_id}"
-        await self.cache_service.set(
-            key, CacheEntry(value="processing", ttl=self.ASSESSMENT_QUALIFICATION_TTL)
-        )
-
     async def is_being_processed(self, assessment_id: str) -> bool:
         """Check if the assessment is currently being processed.
 
@@ -158,8 +151,13 @@ class QualifyService:
         if not self.cache_service or not assessment_id:
             return False
         key = f"assessment:{assessment_id}"
-        value_cached = await self.cache_service.get(key)
-        return value_cached is not None
+        is_processing = await self.cache_service.set_if_not_exists(
+            key, CacheEntry(value="processing", ttl=self.ASSESSMENT_QUALIFICATION_TTL)
+        )
+        # If set_if_not_exists returns True, it means the key was set successfully,
+        # indicating that the assessment was not being processed before.
+        # Therefore, we return the negation to indicate if it is currently being processed.
+        return not is_processing
 
     async def is_already_processed(self, assessment_id: str) -> bool:
         """Check if the assessment has already qualified

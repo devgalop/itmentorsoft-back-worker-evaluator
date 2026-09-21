@@ -18,3 +18,8 @@ class ValkeyCacheService(CacheService):
 
     async def delete(self, key: str):
         await self.client.client.delete(key)
+
+    async def set_if_not_exists(self, key: str, cache_entry: CacheEntry) -> bool:
+        return await self.client.client.set(
+            key, cache_entry.value, ex=cache_entry.get_ttl(), nx=True
+        )
