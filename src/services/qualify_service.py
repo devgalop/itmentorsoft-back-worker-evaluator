@@ -1,19 +1,15 @@
 from collections import defaultdict
 import json
 import time
+from typing import Callable
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from common_py_aws import (
     PublisherService,
-    SqsConnection,
-    SqsConnectionFactoryService,
-    SqsConnectionRequest,
-    SqsPublisherService,
 )
 from itmentorsoft_persistence import (
     AssessmentAnswer,
     AsyncSessionLocal,
-    PostgresAssessmentMapper,
-    PostgresQuestionMapper,
     TopicResult,
     QualifierResult,
 )
@@ -25,21 +21,9 @@ from src.contracts.qualifier_service import (
     ModelSelectorService,
     QualifierService,
 )
-from src.infrastructure.cache.valkey_cache_service import ValkeyCacheService
-from src.infrastructure.cache.valkey_client import ValkeyClient
-from src.infrastructure.databases.postgresql.postgres_qualification_repository import (
-    PostgresQualificationRepository,
-)
 from src.infrastructure.env_manager.env_manager import EnvironmentVariablesConstants
-from src.infrastructure.model_manager.opencode_model_manager_proxy import (
-    OpencodeModelsManagerProxy,
-)
-from src.infrastructure.qualifier.opencode_qualifier_service import (
-    OpencodeQualifierService,
-)
 from src.models.cache_entry import CacheEntry
 from src.models.classify_message import ClassifyMessage, QualificationResult
-from src.models.llm_models import AvailableProcesses
 from src.models.qualify_assessment_request import QualifyAssessmentRequest
 from src.models.qualify_models import (
     BatchQualificationError,
@@ -57,34 +41,30 @@ class QualifyService:
         EnvironmentVariablesConstants.ASSESSMENT_QUALIFICATION_TTL
     )
 
-    def __init__(self):
-        self.qualification_repository: QualificationRepository | None = None
-        self.qualifier_service: QualifierService | None = None
-        self.model_selector_service: ModelSelectorService | None = None
-        self.model_explorer_service: ModelExplorerService | None = None
-        self.cache_service: CacheService | None = None
-        self.publisher_service: PublisherService = SqsPublisherService(
-            self.create_sqs_client()
-        )
+    def __init__(
+        self,
+        qualification_repository_factory: Callable[
+            [AsyncSession], QualificationRepository
+        ],
+        qualifier_service: QualifierService,
+        model_selector_service: ModelSelectorService,
+        model_explorer_service: ModelExplorerService,
+        cache_service: CacheService,
+        publisher_service: PublisherService,
+    ):
+        self.qualification_repository_factory = qualification_repository_factory
+        self.qualifier_service = qualifier_service
+        self.model_selector_service = model_selector_service
+        self.model_explorer_service = model_explorer_service
+        self.cache_service = cache_service
+        self.publisher_service = publisher_service
 
     async def evaluate(self, request: InputMessage) -> QualifyResponse:
         assessment = QualifyAssessmentRequest(**json.loads(request.get_content()))
-        cache_client = ValkeyClient()
-        await cache_client.connect()
-        self.cache_service = ValkeyCacheService(cache_client)
-
-        if await self.is_being_processed(assessment.assessment_id):
-            print(
-                f"Assessment {assessment.assessment_id} is currently being processed."
-            )
-            return QualifyResponse(
-                is_success=False,
-                message=f"Assessment {assessment.assessment_id} is currently being processed.",
-            )
 
         async with AsyncSessionLocal() as session:
-            self.qualification_repository = PostgresQualificationRepository(
-                session, PostgresAssessmentMapper, PostgresQuestionMapper
+            self.qualification_repository = self.qualification_repository_factory(
+                session
             )
 
             if await self.is_already_processed(assessment.assessment_id):
@@ -92,18 +72,20 @@ class QualifyService:
                     f"Assessment {assessment.assessment_id} has already been processed."
                 )
                 return QualifyResponse(
-                    is_success=False,
+                    is_success=True,
                     message=f"Assessment {assessment.assessment_id} has already been processed.",
                 )
 
-            self.model_selector_service = OpencodeModelsManagerProxy(self.cache_service)
-            self.model_explorer_service = OpencodeModelsManagerProxy(self.cache_service)
+            if await self.is_being_processed(assessment.assessment_id):
+                print(
+                    f"Assessment {assessment.assessment_id} is currently being processed."
+                )
+                return QualifyResponse(
+                    is_success=True,
+                    message=f"Assessment {assessment.assessment_id} is currently being processed.",
+                )
 
-            qualifier_model = await self.model_selector_service.get_selected_model(
-                AvailableProcesses.QUALIFIER
-            )
             await self.mark_as_being_processed(assessment.assessment_id)
-            self.qualifier_service = OpencodeQualifierService(qualifier_model)
             print(f"Starting evaluation of assessment {assessment.assessment_id}")
             start_time = time.perf_counter()
             evaluation_results: list[QualifierResult] = await self.qualify_assessment(
@@ -139,23 +121,6 @@ class QualifyService:
                 is_success=True,
                 message=f"Assessment {assessment.assessment_id} evaluated successfully.",
             )
-
-    def create_sqs_client(self) -> SqsConnection:
-        """Create and return an SQS client connection.
-
-        Returns:
-            SqsConnection: The SQS client connection.
-        """
-        sqs_connection_factory = SqsConnectionFactoryService(
-            SqsConnectionRequest(
-                EnvironmentVariablesConstants.AWS_ENDPOINT_URL,
-                EnvironmentVariablesConstants.AWS_ACCESS_KEY_ID,
-                EnvironmentVariablesConstants.AWS_SECRET_ACCESS_KEY,
-                EnvironmentVariablesConstants.AWS_REGION,
-            )
-        )
-        sqs_connection = sqs_connection_factory.create_connection()
-        return sqs_connection
 
     async def unmark_as_being_processed(self, assessment_id: str) -> None:
         """Remove the assessment from the currently being processed state in the cache.

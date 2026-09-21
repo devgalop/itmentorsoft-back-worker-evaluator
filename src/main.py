@@ -1,26 +1,34 @@
 from contextlib import asynccontextmanager
 from common_py_aws import (
-    SqsConnectionFactoryService,
-    SqsConnectionRequest,
     SqsConsumerConfig,
     SqsConsumerService,
 )
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from itmentorsoft_persistence import PostgresAssessmentMapper, PostgresQuestionMapper
 
 from src.dependencies import (
     get_cache_service,
     get_classify_message_sanitizer,
     get_model_explorer_service,
+    get_model_selector_service,
+    get_publisher_service,
+    get_qualifier_service,
     get_qualify_message_sanitizer,
-    get_qualify_service,
 )
 from src.endpoints.init import router as endpoints_router
 from src.infrastructure.broker.aws.aws_sqs_classify_consumer import ClassifyConsumer
+from src.infrastructure.broker.aws.aws_sqs_connection_factory import (
+    SqsConnectionFactory,
+)
 from src.infrastructure.broker.aws.aws_sqs_create_queues import SqsCreator
 from src.infrastructure.broker.aws.aws_sqs_qualify_consumer import SqsQualifyConsumer
 from src.infrastructure.cache.valkey_client import ValkeyClient
+from src.infrastructure.databases.postgresql.postgres_qualification_repository import (
+    PostgresQualificationRepository,
+)
 from src.infrastructure.env_manager.env_manager import EnvironmentVariablesConstants
+from src.services.qualify_service import QualifyService
 
 
 @asynccontextmanager
@@ -37,22 +45,14 @@ async def lifespan(app: FastAPI):
     print("Cache service initialized.")
 
     print("Loading available models...")
-    model_explorer_service = get_model_explorer_service(
-        cache_service=get_cache_service(client=cache_client)
-    )
+    cache_service = get_cache_service(client=cache_client)
+    model_selector_service = get_model_selector_service(cache_service=cache_service)
+    model_explorer_service = get_model_explorer_service(cache_service=cache_service)
     await model_explorer_service.get_available_models()
     print("Available models loaded.")
 
     print("Creating SQS connection...")
-    sqs_connection_factory = SqsConnectionFactoryService(
-        SqsConnectionRequest(
-            EnvironmentVariablesConstants.AWS_ENDPOINT_URL,
-            EnvironmentVariablesConstants.AWS_ACCESS_KEY_ID,
-            EnvironmentVariablesConstants.AWS_SECRET_ACCESS_KEY,
-            EnvironmentVariablesConstants.AWS_REGION,
-        )
-    )
-    sqs_connection = sqs_connection_factory.create_connection()
+    sqs_connection = SqsConnectionFactory.create_sqs_client()
     if EnvironmentVariablesConstants.ENVIRONMENT == "dev":
         sqs_creator = SqsCreator(sqs_connection)
         sqs_creator.create_queues()
@@ -77,7 +77,19 @@ async def lifespan(app: FastAPI):
             ),
         ),
         sqs_handler=SqsQualifyConsumer(
-            get_qualify_message_sanitizer(), get_qualify_service()
+            get_qualify_message_sanitizer(),
+            QualifyService(
+                qualification_repository_factory=lambda session: PostgresQualificationRepository(
+                    session, PostgresAssessmentMapper, PostgresQuestionMapper
+                ),
+                qualifier_service=await get_qualifier_service(
+                    model_selector_service=model_selector_service
+                ),
+                model_selector_service=model_selector_service,
+                model_explorer_service=model_explorer_service,
+                cache_service=cache_service,
+                publisher_service=get_publisher_service(sqs_client=sqs_connection),
+            ),
         ),
     )
 
