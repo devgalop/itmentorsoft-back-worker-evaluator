@@ -10,6 +10,7 @@ from itmentorsoft_persistence import PostgresAssessmentMapper, PostgresQuestionM
 from src.dependencies import (
     get_cache_service,
     get_classify_message_sanitizer,
+    get_classify_service,
     get_model_explorer_service,
     get_model_selector_service,
     get_publisher_service,
@@ -24,11 +25,20 @@ from src.infrastructure.broker.aws.aws_sqs_connection_factory import (
 from src.infrastructure.broker.aws.aws_sqs_create_queues import SqsCreator
 from src.infrastructure.broker.aws.aws_sqs_qualify_consumer import SqsQualifyConsumer
 from src.infrastructure.cache.valkey_client import ValkeyClient
+from src.infrastructure.databases.postgresql.postgres_classification_repository import (
+    PostgresClassificationRepository,
+)
 from src.infrastructure.databases.postgresql.postgres_qualification_repository import (
     PostgresQualificationRepository,
 )
 from src.infrastructure.env_manager.env_manager import EnvironmentVariablesConstants
+from src.services.cache_manager_service import CacheManagerService
+from src.services.classify_service import ClassifyService
 from src.services.qualify_service import QualifyService
+
+DEV_ENVIRONMENT = "dev"
+PREFIX_CACHE_QUALIFICATION = "qualification"
+PREFIX_CACHE_CLASSIFICATION = "classification"
 
 
 @asynccontextmanager
@@ -53,7 +63,7 @@ async def lifespan(app: FastAPI):
 
     print("Creating SQS connection...")
     sqs_connection = SqsConnectionFactory.create_sqs_client()
-    if EnvironmentVariablesConstants.ENVIRONMENT == "dev":
+    if EnvironmentVariablesConstants.ENVIRONMENT == DEV_ENVIRONMENT:
         sqs_creator = SqsCreator(sqs_connection)
         sqs_creator.create_queues()
 
@@ -87,7 +97,9 @@ async def lifespan(app: FastAPI):
                 ),
                 model_selector_service=model_selector_service,
                 model_explorer_service=model_explorer_service,
-                cache_service=cache_service,
+                cache_service=CacheManagerService(
+                    PREFIX_CACHE_QUALIFICATION, cache_service
+                ),
                 publisher_service=get_publisher_service(sqs_client=sqs_connection),
             ),
         ),
@@ -110,7 +122,23 @@ async def lifespan(app: FastAPI):
                 EnvironmentVariablesConstants.CONSUMER_MESSAGES_VISIBILITY_TIMEOUT
             ),
         ),
-        sqs_handler=ClassifyConsumer(get_classify_message_sanitizer()),
+        sqs_handler=ClassifyConsumer(
+            get_classify_message_sanitizer(),
+            ClassifyService(
+                classification_repository_factory=lambda session: PostgresClassificationRepository(
+                    session, PostgresAssessmentMapper
+                ),
+                cache_service=CacheManagerService(
+                    PREFIX_CACHE_CLASSIFICATION, cache_service
+                ),
+                classification_service=await get_classify_service(
+                    model_selector_service=model_selector_service
+                ),
+                model_explorer_service=model_explorer_service,
+                model_selector_service=model_selector_service,
+                publisher_service=get_publisher_service(sqs_client=sqs_connection),
+            ),
+        ),
     )
     app.state.sqs_consumers = {
         "qualify": sqs_qualify_consumer,

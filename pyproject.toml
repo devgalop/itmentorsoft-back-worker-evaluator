@@ -9,6 +9,59 @@ requires-python = ">=3.9"
 pythonpath = ["src"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+env = [
+    "ENVIRONMENT=test",
+    "AWS_ACCESS_KEY_ID=test_access_key",
+    "AWS_SECRET_ACCESS_KEY=test_secret_key",
+    "AWS_REGION=us-east-1",
+    "AWS_ENDPOINT_URL=http://localhost:4566",
+    "AWS_SQS_QUALIFY_QUEUE_NAME=test-qualify-queue",
+    "AWS_SQS_QUALIFY_DLQ_NAME=test-qualify-dlq",
+    "AWS_SQS_QUALIFY_QUEUE_URL=http://localhost:4566/queue/test-qualify",
+    "AWS_SQS_QUALIFY_DLQ_URL=http://localhost:4566/queue/test-qualify-dlq",
+    "AWS_SQS_CLASSIFY_QUEUE_NAME=test-classify-queue",
+    "AWS_SQS_CLASSIFY_DLQ_NAME=test-classify-dlq",
+    "AWS_SQS_CLASSIFY_QUEUE_URL=http://localhost:4566/queue/test-classify",
+    "AWS_SQS_CLASSIFY_DLQ_URL=http://localhost:4566/queue/test-classify-dlq",
+    "CONSUMER_MAX_MESSAGES_PER_REQUEST=10",
+    "CONSUMER_MAX_POOL_TIMEOUT=20",
+    "CONSUMER_MAX_RETRIES=3",
+    "CONSUMER_MESSAGES_VISIBILITY_TIMEOUT=30",
+    "OPENCODE_API_KEY=test-api-key",
+    "OPENCODE_DEFAULT_MODEL=test-model",
+    "OPENCODE_API_URL=http://localhost:11434/v1",
+    "OPENCODE_API_MODELS_URL=http://localhost:11434/v1/models",
+    "ASSESSMENT_QUALIFICATION_CHUNK_SIZE=5",
+    "ASSESSMENT_QUALIFICATION_TTL=300",
+    "ASSESSMENT_MAX_QUESTIONS_NUMBER=50",
+    "DATABASE_URL=postgresql+asyncpg://test:test@localhost:5432/test",
+    "DB_POOL_SIZE=5",
+    "DB_MAX_OVERFLOW=10",
+    "DB_POOL_TIMEOUT=30",
+    "DB_POOL_RECYCLE=1800",
+    "DATABASE_ADMIN_USERNAME=admin",
+    "DATABASE_ADMIN_PASSWORD=admin_pass",
+    "DATABASE_ADMIN_EMAIL=admin@test.com",
+    "VALKEY_HOST=localhost",
+    "VALKEY_PORT=6379",
+    "VALKEY_PASSWORD=",
+    "VALKEY_DB=0",
+    "EVALUATION_MODE=normal",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["src/main.py", "src/dependencies.py", "src/__init__.py"]
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__",
+    "raise NotImplementedError",
+    "pass$",
+]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["ALL"]

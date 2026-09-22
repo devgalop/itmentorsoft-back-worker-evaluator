@@ -1,8 +1,10 @@
-name: PR Build & Test
+name: CI Pipeline
 
 on:
+  push:
+    branches: [master, main]
   pull_request:
-    branches: [master]
+    branches: [master, main]
 
 permissions:
   contents: read
@@ -20,19 +22,20 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.12"
           cache: "pip"
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-cov pytest-mock pytest-env fakeredis
 
-      - name: Run tests
+      - name: Run tests with coverage
         id: tests
         run: |
           set -o pipefail
-          python -m pytest tests/ -v --tb=short 2>&1 | tee test-output.txt
+          python -m pytest tests/ -v --tb=short --cov=src --cov-report=term-missing --cov-report=xml 2>&1 | tee test-output.txt
 
       - name: Determine result
         id: result
@@ -46,12 +49,15 @@ jobs:
             echo "badge_color=red" >> $GITHUB_OUTPUT
           fi
 
-          # Extract summary line (e.g. "95 passed in 2.29s")
           SUMMARY=$(tail -1 test-output.txt || echo "Could not read test output")
           echo "summary=$SUMMARY" >> $GITHUB_OUTPUT
 
+          # Extract coverage percentage
+          COVERAGE=$(grep -oP 'Total coverage: \K[0-9.]+' test-output.txt || echo "N/A")
+          echo "coverage=${COVERAGE}%" >> $GITHUB_OUTPUT
+
       - name: Comment on PR
-        if: always()
+        if: github.event_name == 'pull_request' && always()
         uses: actions/github-script@v7
         with:
           script: |
@@ -60,10 +66,10 @@ jobs:
             const output = fs.readFileSync('test-output.txt', 'utf8');
             const status = '${{ steps.result.outputs.status }}';
             const summary = '${{ steps.result.outputs.summary }}';
+            const coverage = '${{ steps.result.outputs.coverage }}';
             const sha = context.sha.substring(0, 7);
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
 
-            // Truncate output if too long (GitHub comment limit is 65536 chars)
             const maxOutput = 30000;
             const truncatedOutput = output.length > maxOutput
               ? output.substring(output.length - maxOutput) + '\n\n... (output truncated)'
@@ -73,6 +79,7 @@ jobs:
               `## ${status}`,
               '',
               `**Summary:** ${summary}`,
+              `**Coverage:** ${coverage}`,
               `**Commit:** \`${sha}\``,
               `**Workflow:** [View run](${runUrl})`,
               '',
@@ -92,3 +99,81 @@ jobs:
               repo: context.repo.repo,
               body: body,
             });
+
+  docker-build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha
+            type=ref,event=branch
+            type=ref,event=pr
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  docker-publish:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

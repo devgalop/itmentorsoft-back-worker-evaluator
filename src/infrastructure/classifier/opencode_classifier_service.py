@@ -6,10 +6,10 @@ import asyncio
 from itmentorsoft_persistence.dto import (
     ClassificationResult,
 )
+from src.models.classify_message import QualificationResult
 from src.models.classify_models import (
     ClassificationError,
     ClassificationPrompt,
-    QuestionAnswerQualification,
 )
 from src.contracts.classification_service import ClassificationService
 from src.infrastructure.env_manager.env_manager import EnvironmentVariablesConstants
@@ -86,12 +86,12 @@ class OpenCodeClassificationService(ClassificationService):
             return f.read()
 
     def build_batch_user_content(
-        self, qualifications: list[QuestionAnswerQualification]
+        self, qualifications: list[QualificationResult]
     ) -> str:
         """Builds the user content for a batch classification request.
 
         Args:
-            qualifications (list[QuestionAnswerQualification]): A list of question answer qualifications.
+            qualifications (list[QualificationResult]): A list of question answer qualifications.
 
         Returns:
             str: The user content for the batch classification request, formatted as a string.

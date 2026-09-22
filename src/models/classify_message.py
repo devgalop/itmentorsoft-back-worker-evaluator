@@ -44,11 +44,26 @@ class QualificationResult:
     def to_json(self) -> str:
         return json.dumps(self.to_dict())
 
+    def to_text(self) -> str:
+        return json.dumps(
+            {
+                "question_id": self.question_id,
+                "user_id": self.user_id,
+                "assessment_id": self.assessment_id,
+                "question_difficulty": self.question_difficulty,
+                "answer": self.answer,
+                "score": self.score,
+                "feedback": self.feedback,
+                "key_concepts_detected": self.key_concepts_detected,
+                "misconceptions_detected": self.misconceptions_detected,
+            }
+        )
+
 
 class ClassifyMessage(PublishMessageRequest):
 
-    def __init__(self, qualification_results: list[QualificationResult]):
-        self.qualification_results = qualification_results
+    def __init__(self, qualification_answer_results: list[QualificationResult]):
+        self.qualification_answer_results = qualification_answer_results
 
     def get_url(self) -> str:
         return EnvironmentVariablesConstants.AWS_SQS_CLASSIFY_QUEUE_URL
@@ -58,8 +73,30 @@ class ClassifyMessage(PublishMessageRequest):
 
     def to_dict(self) -> dict[str, list[dict[str, str | list[str] | int]]]:
         return {
-            "qualification_results": [qr.to_dict() for qr in self.qualification_results]
+            "qualification_results": [
+                qr.to_dict() for qr in self.qualification_answer_results
+            ]
         }
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict())
+
+    def get_user_id(self) -> str:
+        """Get the user ID from the first qualification answer result.
+
+        Returns:
+            str: The user ID of the first qualification answer result.
+        """
+        if not self.qualification_answer_results:
+            return ""
+        return self.qualification_answer_results[0].user_id
+
+    def get_assessment_id(self) -> str:
+        """Get the assessment ID from the first qualification answer result.
+
+        Returns:
+            str: The assessment ID of the first qualification answer result.
+        """
+        if not self.qualification_answer_results:
+            return ""
+        return self.qualification_answer_results[0].assessment_id

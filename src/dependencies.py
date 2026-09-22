@@ -4,6 +4,7 @@ from common_py_aws import PublisherService, SqsConnection, SqsPublisherService
 from fastapi import Depends
 
 from src.contracts.cache_service import CacheService
+from src.contracts.classification_service import ClassificationService
 from src.contracts.message_sanitizer import MessageSanitizer
 from src.contracts.qualifier_service import (
     ModelExplorerService,
@@ -15,6 +16,9 @@ from src.infrastructure.broker.aws.aws_sqs_connection_factory import (
 )
 from src.infrastructure.cache.valkey_cache_service import ValkeyCacheService
 from src.infrastructure.cache.valkey_client import ValkeyClient
+from src.infrastructure.classifier.opencode_classifier_service import (
+    OpenCodeClassificationService,
+)
 from src.infrastructure.model_manager.opencode_model_manager_proxy import (
     OpencodeModelsManagerProxy,
 )
@@ -65,6 +69,17 @@ async def get_qualifier_service(
         process=AvailableProcesses.QUALIFIER
     )
     return OpencodeQualifierService(model_id=model_selected)
+
+
+async def get_classify_service(
+    model_selector_service: Annotated[
+        ModelSelectorService, Depends(get_model_selector_service)
+    ],
+) -> ClassificationService:
+    model_selected = await model_selector_service.get_selected_model(
+        process=AvailableProcesses.CLASSIFIER
+    )
+    return OpenCodeClassificationService(model_id=model_selected)
 
 
 def get_sqs_connection() -> SqsConnection:

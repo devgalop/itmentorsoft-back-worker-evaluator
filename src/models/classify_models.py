@@ -1,5 +1,7 @@
 import json
 
+from src.models.classify_message import QualificationResult
+
 
 class QuestionAnswerQualification:
     def __init__(
@@ -46,7 +48,7 @@ class QuestionAnswerQualification:
 
 
 class ClassificationPrompt:
-    def __init__(self, qualifications: list[QuestionAnswerQualification]):
+    def __init__(self, qualifications: list[QualificationResult]):
         self.qualifications = qualifications
 
 
