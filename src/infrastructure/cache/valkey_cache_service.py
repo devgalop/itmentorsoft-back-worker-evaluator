@@ -11,7 +11,8 @@ class ValkeyCacheService(CacheService):
         value = await self.client.client.get(key)
         if value is None:
             return None
-        return CacheEntry(value)
+        ttl = await self.client.client.ttl(key)
+        return CacheEntry(value, ttl=ttl if ttl > 0 else None)
 
     async def set(self, key: str, cache_entry: CacheEntry):
         await self.client.client.set(key, cache_entry.value, ex=cache_entry.get_ttl())
@@ -20,6 +21,7 @@ class ValkeyCacheService(CacheService):
         await self.client.client.delete(key)
 
     async def set_if_not_exists(self, key: str, cache_entry: CacheEntry) -> bool:
-        return await self.client.client.set(
+        result = await self.client.client.set(
             key, cache_entry.value, ex=cache_entry.get_ttl(), nx=True
         )
+        return bool(result)

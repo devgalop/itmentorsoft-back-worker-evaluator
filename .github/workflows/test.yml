@@ -1,0 +1,234 @@
+name: Test Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run unit tests
+      run: |
+        pytest tests/ --ignore=tests/integration/ -v --cov=src --cov-report=xml
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        fail_ci_if_empty: false
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    
+    services:
+      postgres:
+        image: postgres:18.6-alpine3.24
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      floci:
+        image: floci/floci:latest
+        ports:
+          - 4566:4566
+        options: >-
+          --health-cmd "curl -f http://localhost:4566/_localstack/health"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      valkey:
+        image: valkey/valkey:8.1.9-alpine3.24
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Create test environment file
+      run: |
+        cat > tests/integration/.env.test << 'EOF'
+        ENVIRONMENT=test
+        
+        # PostgreSQL
+        DATABASE_URL=postgresql+asyncpg://test:test@localhost:5432/test
+        DB_POOL_SIZE=5
+        DB_MAX_OVERFLOW=10
+        DB_POOL_TIMEOUT=30
+        DB_POOL_RECYCLE=1800
+        DATABASE_ADMIN_USERNAME=test
+        DATABASE_ADMIN_PASSWORD=test
+        DATABASE_ADMIN_EMAIL=admin@test.com
+        POSTGRES_USER=test
+        POSTGRES_PASSWORD=test
+        POSTGRES_DB=test
+        
+        # SQS / Floci
+        AWS_ACCESS_KEY_ID=test
+        AWS_SECRET_ACCESS_KEY=test
+        AWS_REGION=us-east-1
+        AWS_ENDPOINT_URL=http://localhost:4566
+        AWS_SQS_QUALIFY_QUEUE_NAME=test-qualify-queue
+        AWS_SQS_QUALIFY_DLQ_NAME=test-qualify-dlq
+        AWS_SQS_QUALIFY_QUEUE_URL=http://localhost:4566/000000000000/test-qualify-queue
+        AWS_SQS_QUALIFY_DLQ_URL=http://localhost:4566/000000000000/test-qualify-dlq
+        AWS_SQS_CLASSIFY_QUEUE_NAME=test-classify-queue
+        AWS_SQS_CLASSIFY_DLQ_NAME=test-classify-dlq
+        AWS_SQS_CLASSIFY_QUEUE_URL=http://localhost:4566/000000000000/test-classify-queue
+        AWS_SQS_CLASSIFY_DLQ_URL=http://localhost:4566/000000000000/test-classify-dlq
+        
+        # Valkey
+        VALKEY_HOST=localhost
+        VALKEY_PORT=6379
+        VALKEY_PASSWORD=test
+        VALKEY_DB=0
+        
+        # OpenCode (mocked in integration tests)
+        OPENCODE_API_KEY=test-key
+        OPENCODE_API_URL=http://localhost:11434/v1
+        OPENCODE_DEFAULT_MODEL=test-model
+        OPENCODE_API_MODELS_URL=http://localhost:11434/v1/models
+        
+        # Consumer config
+        CONSUMER_MAX_MESSAGES_PER_REQUEST=10
+        CONSUMER_MAX_POOL_TIMEOUT=20
+        CONSUMER_MAX_RETRIES=3
+        CONSUMER_MESSAGES_VISIBILITY_TIMEOUT=30
+        
+        # Evaluation config
+        ASSESSMENT_QUALIFICATION_CHUNK_SIZE=5
+        ASSESSMENT_QUALIFICATION_TTL=300
+        ASSESSMENT_MAX_QUESTIONS_NUMBER=50
+        EVALUATION_MODE=normal
+        EOF
+
+    - name: Wait for services to be healthy
+      run: |
+        echo "Waiting for PostgreSQL..."
+        for i in {1..30}; do
+          if pg_isready -h localhost -p 5432 -U test; then
+            echo "PostgreSQL is ready!"
+            break
+          fi
+          echo "Waiting for PostgreSQL... ($i/30)"
+          sleep 2
+        done
+        
+        echo "Waiting for Floci..."
+        for i in {1..30}; do
+          if curl -f http://localhost:4566/_localstack/health; then
+            echo "Floci is ready!"
+            break
+          fi
+          echo "Waiting for Floci... ($i/30)"
+          sleep 2
+        done
+        
+        echo "Waiting for Valkey..."
+        for i in {1..30}; do
+          if valkey-cli -h localhost -p 6379 -a test ping; then
+            echo "Valkey is ready!"
+            break
+          fi
+          echo "Waiting for Valkey... ($i/30)"
+          sleep 2
+        done
+
+    - name: Run integration tests
+      env:
+        ENVIRONMENT: test
+        DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test
+        DB_POOL_SIZE: 5
+        DB_MAX_OVERFLOW: 10
+        DB_POOL_TIMEOUT: 30
+        DB_POOL_RECYCLE: 1800
+        DATABASE_ADMIN_USERNAME: test
+        DATABASE_ADMIN_PASSWORD: test
+        DATABASE_ADMIN_EMAIL: admin@test.com
+        POSTGRES_USER: test
+        POSTGRES_PASSWORD: test
+        POSTGRES_DB: test
+        AWS_ACCESS_KEY_ID: test
+        AWS_SECRET_ACCESS_KEY: test
+        AWS_REGION: us-east-1
+        AWS_ENDPOINT_URL: http://localhost:4566
+        AWS_SQS_QUALIFY_QUEUE_NAME: test-qualify-queue
+        AWS_SQS_QUALIFY_DLQ_NAME: test-qualify-dlq
+        AWS_SQS_QUALIFY_QUEUE_URL: http://localhost:4566/000000000000/test-qualify-queue
+        AWS_SQS_QUALIFY_DLQ_URL: http://localhost:4566/000000000000/test-qualify-dlq
+        AWS_SQS_CLASSIFY_QUEUE_NAME: test-classify-queue
+        AWS_SQS_CLASSIFY_DLQ_NAME: test-classify-dlq
+        AWS_SQS_CLASSIFY_QUEUE_URL: http://localhost:4566/000000000000/test-classify-queue
+        AWS_SQS_CLASSIFY_DLQ_URL: http://localhost:4566/000000000000/test-classify-dlq
+        VALKEY_HOST: localhost
+        VALKEY_PORT: 6379
+        VALKEY_PASSWORD: test
+        VALKEY_DB: 0
+        OPENCODE_API_KEY: test-key
+        OPENCODE_API_URL: http://localhost:11434/v1
+        OPENCODE_DEFAULT_MODEL: test-model
+        OPENCODE_API_MODELS_URL: http://localhost:11434/v1/models
+        CONSUMER_MAX_MESSAGES_PER_REQUEST: 10
+        CONSUMER_MAX_POOL_TIMEOUT: 20
+        CONSUMER_MAX_RETRIES: 3
+        CONSUMER_MESSAGES_VISIBILITY_TIMEOUT: 30
+        ASSESSMENT_QUALIFICATION_CHUNK_SIZE: 5
+        ASSESSMENT_QUALIFICATION_TTL: 300
+        ASSESSMENT_MAX_QUESTIONS_NUMBER: 50
+        EVALUATION_MODE: normal
+      run: |
+        pytest tests/integration/ -v --cov=src --cov-report=xml --cov-append
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        flags: integration
+        fail_ci_if_empty: false

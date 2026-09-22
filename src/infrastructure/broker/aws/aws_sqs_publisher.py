@@ -46,7 +46,7 @@ class SqsPublisher:
     async def publish_sample_classify_messages(self):
         sample_messages = [
             ClassifyMessage(
-                qualification_results=[
+                qualification_answer_results=[
                     QualificationResult(
                         question_id="sample_question_id",
                         user_id="sample_user_id",
