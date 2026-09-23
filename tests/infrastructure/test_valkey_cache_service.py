@@ -16,6 +16,7 @@ class TestValkeyCacheService:
     async def test_get_existing_value(self):
         mock_client = AsyncMock()
         mock_client.client.get = AsyncMock(return_value='{"key": "value"}')
+        mock_client.client.ttl = AsyncMock(return_value=300)
         service = self._create_service(mock_client)
 
         result = await service.get("test-key")
