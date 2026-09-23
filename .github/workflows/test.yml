@@ -161,17 +161,7 @@ jobs:
           echo "Waiting for PostgreSQL... ($i/30)"
           sleep 2
         done
-        
-        echo "Waiting for Floci..."
-        for i in {1..30}; do
-          if curl -f http://localhost:4566/_localstack/health; then
-            echo "Floci is ready!"
-            break
-          fi
-          echo "Waiting for Floci... ($i/30)"
-          sleep 2
-        done
-        
+              
         echo "Waiting for Valkey..."
         for i in {1..30}; do
           if valkey-cli -h localhost -p 6379 -a test ping; then
