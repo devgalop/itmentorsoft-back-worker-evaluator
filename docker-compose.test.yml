@@ -24,7 +24,7 @@ services:
       - floci_data_test:/data
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_floci/health"]
       interval: 10s
       timeout: 5s
       retries: 5
