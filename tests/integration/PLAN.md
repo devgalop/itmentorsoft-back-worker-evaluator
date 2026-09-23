@@ -51,12 +51,6 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - floci_data_test:/data
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
 
   valkey-test:
     image: valkey/valkey:8.1.9-alpine3.24
