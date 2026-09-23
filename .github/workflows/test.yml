@@ -61,12 +61,6 @@ jobs:
         image: floci/floci:latest
         ports:
           - 4566:4566
-        options: >-
-          --health-cmd "curl -f http://localhost:4566/_localstack/health"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-          --health-start-period 30s
 
       valkey:
         image: valkey/valkey:8.1.9-alpine3.24
@@ -169,6 +163,16 @@ jobs:
             break
           fi
           echo "Waiting for Valkey... ($i/30)"
+          sleep 2
+        done
+
+        echo "Waiting for Floci..."
+        for i in {1..30}; do
+          if curl -sf http://localhost:4566/_localstack/health > /dev/null 2>&1; then
+            echo "Floci is ready!"
+            break
+          fi
+          echo "Waiting for Floci... ($i/30)"
           sleep 2
         done
 
