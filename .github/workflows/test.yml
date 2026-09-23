@@ -157,13 +157,13 @@ jobs:
         done
               
         echo "Waiting for Valkey..."
-        for i in {1..30}; do
-          if valkey-cli -h localhost -p 6379 -a test ping; then
+        for i in {1..50}; do
+          if python -c "import valkey; r = valkey.Valkey(host='localhost', port=6379, password='test'); print(r.ping())" 2>/dev/null; then
             echo "Valkey is ready!"
             break
           fi
-          echo "Waiting for Valkey... ($i/30)"
-          sleep 2
+          echo "Waiting for Valkey... ($i/50)"
+          sleep 3
         done
 
         echo "Waiting for Floci..."
