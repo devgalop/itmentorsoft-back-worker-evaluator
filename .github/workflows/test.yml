@@ -62,10 +62,11 @@ jobs:
         ports:
           - 4566:4566
         options: >-
-          --health-cmd "curl -f http://localhost:4566/health"
+          --health-cmd "curl -f http://localhost:4566/_localstack/health"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+          --health-start-period 30s
 
       valkey:
         image: valkey/valkey:8.1.9-alpine3.24
