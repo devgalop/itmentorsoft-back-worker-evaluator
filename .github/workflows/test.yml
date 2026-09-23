@@ -167,14 +167,20 @@ jobs:
         done
 
         echo "Waiting for Floci..."
+        floci_ready=false
         for i in {1..30}; do
           if curl -sf http://localhost:4566/_localstack/health > /dev/null 2>&1; then
             echo "Floci is ready!"
+            floci_ready=true
             break
           fi
           echo "Waiting for Floci... ($i/30)"
           sleep 2
         done
+        if [ "$floci_ready" != "true" ]; then
+          echo "Floci failed to become healthy in time"
+          exit 1
+        fi
 
     - name: Run integration tests
       env:
