@@ -16,14 +16,21 @@ from src.infrastructure.broker.aws.aws_sqs_connection_factory import (
 )
 from src.infrastructure.cache.valkey_cache_service import ValkeyCacheService
 from src.infrastructure.cache.valkey_client import ValkeyClient
+from src.infrastructure.circuit_breaker.circuit_breaker_service import (
+    CircuitBreakerService,
+)
 from src.infrastructure.classifier.opencode_classifier_service import (
     OpenCodeClassificationService,
 )
+from src.infrastructure.env_manager.env_manager import EnvironmentVariablesConstants
 from src.infrastructure.model_manager.opencode_model_manager_proxy import (
     OpencodeModelsManagerProxy,
 )
 from src.infrastructure.qualifier.opencode_qualifier_service import (
     OpencodeQualifierService,
+)
+from src.infrastructure.qualifier.opencode_resilient_qualifier_service import (
+    OpencodeResilientQualifierService,
 )
 from src.models.llm_models import AvailableProcesses
 from src.services.classify_message_sanitizer import ClassifyMessageSanitizer
@@ -64,11 +71,22 @@ async def get_qualifier_service(
     model_selector_service: Annotated[
         ModelSelectorService, Depends(get_model_selector_service)
     ],
+    cache_service: Annotated[CacheService, Depends(get_cache_service)],
 ) -> QualifierService:
     model_selected = await model_selector_service.get_selected_model(
         process=AvailableProcesses.QUALIFIER
     )
-    return OpencodeQualifierService(model_id=model_selected)
+    fallback_model = EnvironmentVariablesConstants.OPENCODE_FALLBACK_MODEL
+
+    primary_service = OpencodeQualifierService(model_id=model_selected)
+    fallback_service = OpencodeQualifierService(model_id=fallback_model)
+    breaker = CircuitBreakerService(cache_service)
+
+    return OpencodeResilientQualifierService(
+        primary_service=primary_service,
+        fallback_service=fallback_service,
+        circuit_breaker_service=breaker,
+    )
 
 
 async def get_classify_service(

@@ -26,6 +26,7 @@ class EnvironmentVariablesConstants:
         "CONSUMER_MESSAGES_VISIBILITY_TIMEOUT",
         "OPENCODE_API_KEY",
         "OPENCODE_DEFAULT_MODEL",
+        "OPENCODE_FALLBACK_MODEL",
         "OPENCODE_API_URL",
         "OPENCODE_API_MODELS_URL",
         "ASSESSMENT_QUALIFICATION_CHUNK_SIZE",
@@ -69,6 +70,7 @@ class EnvironmentVariablesConstants:
 
     OPENCODE_API_KEY = os.getenv("OPENCODE_API_KEY", "")
     OPENCODE_DEFAULT_MODEL = os.getenv("OPENCODE_DEFAULT_MODEL", "")
+    OPENCODE_FALLBACK_MODEL = os.getenv("OPENCODE_FALLBACK_MODEL", "")
     OPENCODE_API_URL = os.getenv("OPENCODE_API_URL", "")
     OPENCODE_API_MODELS_URL = os.getenv("OPENCODE_API_MODELS_URL", "")
 
