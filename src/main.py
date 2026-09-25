@@ -93,7 +93,8 @@ async def lifespan(app: FastAPI):
                     session, PostgresAssessmentMapper, PostgresQuestionMapper
                 ),
                 qualifier_service=await get_qualifier_service(
-                    model_selector_service=model_selector_service
+                    model_selector_service=model_selector_service,
+                    cache_service=cache_service,
                 ),
                 model_selector_service=model_selector_service,
                 model_explorer_service=model_explorer_service,
@@ -132,7 +133,8 @@ async def lifespan(app: FastAPI):
                     PREFIX_CACHE_CLASSIFICATION, cache_service
                 ),
                 classification_service=await get_classify_service(
-                    model_selector_service=model_selector_service
+                    model_selector_service=model_selector_service,
+                    cache_service=cache_service,
                 ),
                 model_explorer_service=model_explorer_service,
                 model_selector_service=model_selector_service,
