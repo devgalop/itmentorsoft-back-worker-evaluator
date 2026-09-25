@@ -22,6 +22,9 @@ from src.infrastructure.circuit_breaker.circuit_breaker_service import (
 from src.infrastructure.classifier.opencode_classifier_service import (
     OpenCodeClassificationService,
 )
+from src.infrastructure.classifier.opencode_resilient_classifier_service import (
+    OpencodeResilientClassifierService,
+)
 from src.infrastructure.env_manager.env_manager import EnvironmentVariablesConstants
 from src.infrastructure.model_manager.opencode_model_manager_proxy import (
     OpencodeModelsManagerProxy,
@@ -93,11 +96,21 @@ async def get_classify_service(
     model_selector_service: Annotated[
         ModelSelectorService, Depends(get_model_selector_service)
     ],
+    cache_service: Annotated[CacheService, Depends(get_cache_service)],
 ) -> ClassificationService:
     model_selected = await model_selector_service.get_selected_model(
         process=AvailableProcesses.CLASSIFIER
     )
-    return OpenCodeClassificationService(model_id=model_selected)
+    fallback_model = EnvironmentVariablesConstants.OPENCODE_FALLBACK_MODEL
+    primary_service = OpenCodeClassificationService(model_id=model_selected)
+    fallback_service = OpenCodeClassificationService(model_id=fallback_model)
+    breaker = CircuitBreakerService(cache_service)
+
+    return OpencodeResilientClassifierService(
+        primary_service=primary_service,
+        fallback_service=fallback_service,
+        circuit_breaker_service=breaker,
+    )
 
 
 def get_sqs_connection() -> SqsConnection:
