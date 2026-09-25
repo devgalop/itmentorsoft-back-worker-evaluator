@@ -52,6 +52,7 @@ def mock_env_vars():
         "VALKEY_PASSWORD": "test-password",
         "VALKEY_DB": "0",
         "EVALUATION_MODE": "normal",
+        "OPENCODE_FALLBACK_MODEL": "test-fallback-model",
     }
     with patch.dict(os.environ, env_vars, clear=True):
         # Reload env_manager to pick up patched env vars
