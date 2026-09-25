@@ -119,3 +119,13 @@ class CircuitBreakerService:
         failure_count = value.get("failure_count", 0) + 1
         if failure_count >= self.failure_threshold:
             await self._transition_to_open(breaker_id, failure_count=failure_count)
+            return
+
+        cache_event = json.dumps(
+            CircuitBreakerEvent(
+                state=CircuitBreakerState.CLOSED.value,
+                failure_count=failure_count,
+                failed_at=time.time(),
+            ).to_dict()
+        )
+        await self.cache_service.set(key, CacheEntry(value=cache_event))
