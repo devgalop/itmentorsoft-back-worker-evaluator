@@ -73,3 +73,5 @@ RESTRICCIONES:
 * El campo `classification` debe contener únicamente una palabra.
 * El campo `user_id` debe guardar relación con el proporcionado.
 * El campo `assessment_id` debe guardar relación con el proporcionado.
+* El JSON debe poder ser deserializado.
+* No utilices ningún descriptor json para la respuesta, solo el contenido del json. SIEMPRE DEBE SER UN OBJETO

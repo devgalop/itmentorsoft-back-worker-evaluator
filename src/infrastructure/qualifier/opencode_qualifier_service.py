@@ -4,6 +4,7 @@ from typing import Any
 from openai import OpenAI, APIStatusError, APIConnectionError
 import json
 import asyncio
+from pydantic import ValidationError
 from src.models.qualify_models import (
     BatchQualificationError,
     QualifierPrompt,
@@ -12,10 +13,19 @@ from src.models.qualify_models import (
 from itmentorsoft_persistence import QualifierResult
 from src.contracts.qualifier_service import QualifierService
 from src.infrastructure.env_manager.env_manager import EnvironmentVariablesConstants
+from src.infrastructure.qualifier.llm_response_models import (
+    QualifierLLMResponse,
+    BatchQualifierLLMItem,
+)
 
 _RETRYABLE_STATUS_CODES = {500, 502, 503, 504}
 _MAX_RETRIES = 3
 _INITIAL_BACKOFF_SECONDS = 1.0
+
+
+def _clamp_score(score: int, min_score: int = 0, max_score: int = 100) -> int:
+    """Clamp score to valid range [min_score, max_score]."""
+    return max(min_score, min(score, max_score))
 
 
 class OpencodeQualifierService(QualifierService):
@@ -68,27 +78,67 @@ class OpencodeQualifierService(QualifierService):
         completion = await self._call_with_retry(
             [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": qualifier_prompt.user_answer},
+                {
+                    "role": "user",
+                    "content": f"<student_answer>\n{qualifier_prompt.user_answer}\n</student_answer>",
+                },
             ]
         )
         response = completion.choices[0].message.content
         if not response:
             raise ValueError("Received empty response from the qualifier service.")
 
-        response_json = json.loads(response)
         try:
-            score_int = int(round(float(response_json.get("score", 0))))
-        except (TypeError, ValueError):
-            score_int = 0
+            validated_response = QualifierLLMResponse.model_validate_json(response)
+        except ValidationError as e:
+            print(f"LLM response validation failed: {e}")
+            # Fallback: try to extract what we can
+            try:
+                response_json = json.loads(response)
+            except (json.JSONDecodeError, TypeError):
+                response_json = {}
+
+            try:
+                score_int = _clamp_score(
+                    int(round(float(response_json.get("score", 0))))
+                )
+            except (TypeError, ValueError):
+                score_int = 0
+
+            return QualifierResult(
+                id=uuid.uuid4().hex,
+                question_id=qualifier_prompt.rubric.question_id,
+                user_id=qualifier_prompt.user_id,
+                score=score_int,
+                feedback=(
+                    response_json.get("feedback", "")
+                    if isinstance(response_json, dict)
+                    else ""
+                ),
+                key_concepts_detected=(
+                    response_json.get("key_concepts_detected", [])
+                    if isinstance(response_json, dict)
+                    else []
+                ),
+                misconceptions_detected=(
+                    response_json.get("misconceptions_detected", [])
+                    if isinstance(response_json, dict)
+                    else []
+                ),
+                question_topic=qualifier_prompt.rubric.classification,
+                assessment_id=qualifier_prompt.assessment_id,
+                question_difficulty=qualifier_prompt.rubric.difficulty.value,
+                answer_id=qualifier_prompt.answer_id,
+            )
 
         return QualifierResult(
             id=uuid.uuid4().hex,
             question_id=qualifier_prompt.rubric.question_id,
             user_id=qualifier_prompt.user_id,
-            score=score_int,
-            feedback=response_json.get("feedback", ""),
-            key_concepts_detected=response_json.get("key_concepts_detected", []),
-            misconceptions_detected=response_json.get("misconceptions_detected", []),
+            score=validated_response.score,
+            feedback=validated_response.feedback,
+            key_concepts_detected=validated_response.key_concepts_detected,
+            misconceptions_detected=validated_response.misconceptions_detected,
             question_topic=qualifier_prompt.rubric.classification,
             assessment_id=qualifier_prompt.assessment_id,
             question_difficulty=qualifier_prompt.rubric.difficulty.value,
@@ -156,8 +206,8 @@ class OpencodeQualifierService(QualifierService):
         for rubric, answer in zip(batch_prompt.rubrics, batch_prompt.answers):
             parts.append(
                 f"--- Respuesta [{answer.answer_id}] ---\n"
-                f"RÚBRICA: {rubric.to_text()}\n"
-                f"RESPUESTA DEL ESTUDIANTE: {answer.answer}\n"
+                f"RÚBRICA: <rubric> {rubric.to_text()} </rubric>\n"
+                f"RESPUESTA DEL ESTUDIANTE: <user_answer> {answer.answer} </user_answer>\n"
             )
         return "\n".join(parts)
 
@@ -205,23 +255,33 @@ class OpencodeQualifierService(QualifierService):
 
         parsed_items: list[dict[str, Any]] = parsed
 
+        # Validate each item with Pydantic
+        validated_items: list[BatchQualifierLLMItem] = []
+        for item in parsed_items:
+            try:
+                validated_item = BatchQualifierLLMItem.model_validate(item)
+                validated_items.append(validated_item)
+            except ValidationError as e:
+                print(
+                    f"Batch item validation failed for answer_id={item.get('answer_id')}: {e}"
+                )
+                # Skip invalid items
+                continue
+
         # Build lookups for mapping
         answer_lookup = {a.answer_id: a for a in batch_prompt.answers}
         rubric_lookup = {r.question_id: r for r in batch_prompt.rubrics}
 
         results: list[QualifierResult] = []
-        for item in parsed_items:
-            aid = item.get("answer_id")
+        for item in validated_items:
+            aid = item.answer_id
             if aid not in answer_lookup:
                 print(f"Orphan result with answer_id={aid}, discarding")
                 continue
             answer = answer_lookup[aid]
             rubric = rubric_lookup[answer.question_id]
 
-            try:
-                score_int = int(round(float(item.get("score", 0))))
-            except (TypeError, ValueError):
-                score_int = 0
+            score_int = _clamp_score(item.score)
 
             results.append(
                 QualifierResult(
@@ -229,13 +289,9 @@ class OpencodeQualifierService(QualifierService):
                     question_id=rubric.question_id,
                     user_id=batch_prompt.user_id,
                     score=score_int,
-                    feedback=item.get("feedback", ""),
-                    key_concepts_detected=list(
-                        item.get("key_concepts_detected", []) or []
-                    ),
-                    misconceptions_detected=list(
-                        item.get("misconceptions_detected", []) or []
-                    ),
+                    feedback=item.feedback,
+                    key_concepts_detected=list(item.key_concepts_detected or []),
+                    misconceptions_detected=list(item.misconceptions_detected or []),
                     question_topic=rubric.classification,
                     assessment_id=batch_prompt.assessment_id,
                     question_difficulty=rubric.difficulty.value,
