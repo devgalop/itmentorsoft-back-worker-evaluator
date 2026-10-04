@@ -12,9 +12,9 @@ class SqsQualifyConsumer(ConsumerHandler):
 
     async def process_message(self, message: SqsMessageReceived) -> bool:
         try:
-            print(f"Processing message: {message.body}")
+            print(f"Processing message {message.body}")
             sanitized_message = self.message_sanitizer.sanitize(message.body)
-            print(f"Sanitized message: {sanitized_message.get_content()}")
+            print("Sanitizing message")
             result = await self.service.evaluate(sanitized_message)
             print(f"Evaluation result: {result.message}")
             return result.is_success

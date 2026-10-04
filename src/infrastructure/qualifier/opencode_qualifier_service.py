@@ -88,6 +88,8 @@ class OpencodeQualifierService(QualifierService):
         if not response:
             raise ValueError("Received empty response from the qualifier service.")
 
+        print(f"Respuesta generada por el modelo {self.model_id}: {response}")
+
         try:
             validated_response = QualifierLLMResponse.model_validate_json(response)
         except ValidationError as e:
