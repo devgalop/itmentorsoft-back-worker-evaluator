@@ -1,0 +1,71 @@
+name: Release to AWS ECR
+
+on:
+  push:
+    tags:
+      - "v.*.*"
+      - "prod-*-*"
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPOSITORY: ${{ secrets.AWS_ECR_REPOSITORY }}
+
+jobs:
+  docker-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          retry-max-attempts: 3
+
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Extract version tags from prod tag
+        id: tags
+        run: |
+          # Get the full tag name (e.g., prod-v1-2-3)
+          PROD_TAG="${GITHUB_REF_NAME}"
+
+          # Extract version portion: strip "prod-" prefix
+          VERSION_PART="${PROD_TAG#prod-}"
+
+          # Convert dashes to dots for semver (e.g., v1-2-3 -> v1.2.3)
+          VERSION_TAG="${VERSION_PART//-/.}"
+
+          # ECR registry from login step
+          ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+
+          # Build tag list: both the prod tag and the version tag
+          echo "prod_tag=${ECR_REGISTRY}/${ECR_REPOSITORY}:${PROD_TAG}" >> "$GITHUB_OUTPUT"
+          echo "version_tag=${ECR_REGISTRY}/${ECR_REPOSITORY}:${VERSION_TAG}" >> "$GITHUB_OUTPUT"
+
+          echo "Prod tag: ${ECR_REGISTRY}/${ECR_REPOSITORY}:${PROD_TAG}"
+          echo "Version tag: ${ECR_REGISTRY}/${ECR_REPOSITORY}:${VERSION_TAG}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image to ECR
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.tags.outputs.prod_tag }}
+            ${{ steps.tags.outputs.version_tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
