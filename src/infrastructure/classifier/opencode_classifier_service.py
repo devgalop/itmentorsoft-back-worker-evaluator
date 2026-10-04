@@ -31,6 +31,9 @@ class OpenCodeClassificationService(ClassificationService):
 
         user_content = self.build_batch_user_content(input_data.qualifications)
 
+        print(
+            f"Starting classification for assessment {input_data.qualifications[0].assessment_id} with model {self.model_id}."
+        )
         completion = await asyncio.to_thread(
             self.client.chat.completions.create,
             model=self.model_id,
@@ -42,10 +45,15 @@ class OpenCodeClassificationService(ClassificationService):
         response = completion.choices[0].message.content
         if not response:
             raise ValueError("Received empty response from the classification service.")
+        print(
+            f"Finished classification for assessment {input_data.qualifications[0].assessment_id} with model {self.model_id}."
+        )
+        print(f"Response from model {self.model_id}: {response}")
 
         try:
             parsed = json.loads(response)
         except json.JSONDecodeError:
+            print(f"Failed to parse response from model {self.model_id}: {response}")
             raise ClassificationError(
                 raw_response=response,
                 message=f"Failed to parse batch classification response as JSON: {response[:200]}",

@@ -49,18 +49,21 @@ class ClassifyService:
                 )
 
                 if await self.is_already_processed(user_id, assessment_id):
+                    print(f"Assessment {assessment_id} has already been processed.")
                     return ClassifyResponse(
                         is_success=True,
                         message="Assessment has already been classified",
                     )
 
                 if await self.cache_service.is_being_processed(assessment_id):
+                    print(f"Assessment {assessment_id} is currently being processed.")
                     return ClassifyResponse(
                         is_success=True,
                         message="Assessment is currently being classified",
                     )
 
                 start_time = time.perf_counter()
+                print(f"Starting classification for assessment {assessment_id}.")
                 classification_result = await self.classify_assessment(
                     results.qualification_answer_results
                 )
@@ -73,6 +76,7 @@ class ClassifyService:
                     classification_result
                 )
                 print("Classification result saved.")
+                print(f"Finished classification for assessment {assessment_id}.")
 
                 await self.cache_service.unmark_as_being_processed(assessment_id)
                 return ClassifyResponse(

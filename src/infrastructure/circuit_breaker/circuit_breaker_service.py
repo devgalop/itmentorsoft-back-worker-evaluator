@@ -40,6 +40,9 @@ class CircuitBreakerService:
         # Check if the circuit breaker is open and if the timeout has expired.
         if value.get("state") == CircuitBreakerState.OPEN.value:
             # If the timeout has expired, consider the circuit breaker closed.
+            print(
+                f"Timeout expired for circuit breaker {breaker_id}, transitioning to half-open."
+            )
             if time.time() - value.get("failed_at", 0) > self.time_out_seconds:
                 # Reset the state to half-open since the timeout has expired.
                 await self._transition_to_half_open(breaker_id)
@@ -58,6 +61,7 @@ class CircuitBreakerService:
         if not value_cached:
             return
 
+        print(f"Transitioning circuit breaker {breaker_id} to half-open state.")
         cache_event = json.dumps(
             CircuitBreakerEvent(
                 state=CircuitBreakerState.HALF_OPEN.value, failure_count=0, failed_at=0
@@ -78,6 +82,7 @@ class CircuitBreakerService:
         if not value_cached:
             return
 
+        print(f"Transitioning circuit breaker {breaker_id} to open state.")
         cache_event = json.dumps(
             CircuitBreakerEvent(
                 state=CircuitBreakerState.OPEN.value,
@@ -96,6 +101,9 @@ class CircuitBreakerService:
         """
         key = f"{self.DEFAULT_PREFIX}:{breaker_id}"
         await self.cache_service.delete(key)
+        print(
+            f"Recording success for circuit breaker {breaker_id}, resetting to closed state."
+        )
 
     async def record_failure(self, breaker_id: str):
         """Record a failed operation and transition the circuit breaker to open state if necessary.
@@ -121,6 +129,9 @@ class CircuitBreakerService:
             await self._transition_to_open(breaker_id, failure_count=failure_count)
             return
 
+        print(
+            f"Recording failure for circuit breaker {breaker_id}. Failure count: {failure_count}"
+        )
         cache_event = json.dumps(
             CircuitBreakerEvent(
                 state=CircuitBreakerState.CLOSED.value,

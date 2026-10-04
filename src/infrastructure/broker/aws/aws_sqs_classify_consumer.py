@@ -16,7 +16,7 @@ class ClassifyConsumer(ConsumerHandler):
         try:
             print(f"Processing message: {message.body}")
             sanitized_message = self.message_sanitizer.sanitize(message.body)
-            print(f"Sanitized message: {sanitized_message.get_content()}")
+            print("Sanitizing message")
             classification_result = await self.classifier_service.classify(
                 sanitized_message
             )
