@@ -54,7 +54,7 @@ Reglas para la clasificación:
 15. Si no existe suficiente evidencia para determinar el nivel con confianza, utiliza la clasificación que mejor represente la evidencia disponible y expresa la incertidumbre en el feedback.
 
 FORMATO DE SALIDA:
-Devuelve ÚNICAMENTE un JSON donde cada elemento corresponde al resultado de la evaluación:
+Devuelve ÚNICAMENTE un Objeto JSON con la siguiente estructura:
 {
     "user_id":"string",
     "assessment_id":"string",
@@ -75,3 +75,4 @@ RESTRICCIONES:
 * El campo `assessment_id` debe guardar relación con el proporcionado.
 * El JSON debe poder ser deserializado.
 * No utilices ningún descriptor json para la respuesta, solo el contenido del json. SIEMPRE DEBE SER UN OBJETO
+* NO devuelvas un JSON Array, SIEMPRE debe ser un JSON Object
