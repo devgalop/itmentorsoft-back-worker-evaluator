@@ -1,7 +1,6 @@
 import json
 import time
 from typing import Callable
-from common_py_aws import PublisherService
 from itmentorsoft_persistence import AsyncSessionLocal, ClassificationResult
 from sqlalchemy.ext.asyncio import AsyncSession
 from itmentorsoft_persistence.repositories import ClassificationRepository
@@ -11,7 +10,9 @@ from src.contracts.qualifier_service import ModelExplorerService, ModelSelectorS
 from src.models.classify_message import ClassifyMessage, QualificationResult
 from src.models.classify_models import ClassificationPrompt
 from src.models.classify_response import ClassifyResponse
+from src.models.notification_message import ClassificationNotifyRequest
 from src.services.cache_manager_service import CacheManagerService
+from src.services.notification_service import NotificationService
 
 
 class ClassifyService:
@@ -25,14 +26,14 @@ class ClassifyService:
         model_selector_service: ModelSelectorService,
         model_explorer_service: ModelExplorerService,
         cache_service: CacheManagerService,
-        publisher_service: PublisherService,
+        notify_service: NotificationService,
     ):
         self.classification_repository_factory = classification_repository_factory
         self.classification_service = classification_service
         self.model_selector_service = model_selector_service
         self.model_explorer_service = model_explorer_service
         self.cache_service = cache_service
-        self.publisher_service = publisher_service
+        self.notify_service = notify_service
 
     async def classify(self, request: InputMessage) -> ClassifyResponse:
         results = self.get_message(request)
@@ -77,7 +78,13 @@ class ClassifyService:
                 )
                 print("Classification result saved.")
                 print(f"Finished classification for assessment {assessment_id}.")
-
+                await self.notify_service.send_final_classification_notification(
+                    ClassificationNotifyRequest(
+                        user_id=user_id,
+                        classification=classification_result.classification,
+                        feedback=classification_result.feedback,
+                    )
+                )
                 await self.cache_service.unmark_as_being_processed(assessment_id)
                 return ClassifyResponse(
                     is_success=True, message="Classification successful"

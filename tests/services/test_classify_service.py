@@ -19,7 +19,7 @@ class TestClassifyService:
         model_selector=None,
         model_explorer=None,
         cache_service=None,
-        publisher=None,
+        notify_service=None,
         repo=None,
     ):
         service = ClassifyService(
@@ -28,7 +28,7 @@ class TestClassifyService:
             model_selector_service=model_selector or AsyncMock(),
             model_explorer_service=model_explorer or AsyncMock(),
             cache_service=cache_service or AsyncMock(),
-            publisher_service=publisher or AsyncMock(),
+            notify_service=notify_service or AsyncMock(),
         )
         # Always set the attribute so methods can check it
         service.classification_repository = repo

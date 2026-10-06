@@ -5,7 +5,11 @@ from common_py_aws import (
 )
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from itmentorsoft_persistence import PostgresAssessmentMapper, PostgresQuestionMapper
+from itmentorsoft_persistence import (
+    PostgresAssessmentMapper,
+    PostgresQuestionMapper,
+    PostgresUserMapper,
+)
 
 from src.dependencies import (
     get_cache_service,
@@ -31,9 +35,13 @@ from src.infrastructure.databases.postgresql.postgres_classification_repository 
 from src.infrastructure.databases.postgresql.postgres_qualification_repository import (
     PostgresQualificationRepository,
 )
+from src.infrastructure.databases.postgresql.postgres_user_repository import (
+    PostgresUserNotificationRepository,
+)
 from src.infrastructure.env_manager.env_manager import EnvironmentVariablesConstants
 from src.services.cache_manager_service import CacheManagerService
 from src.services.classify_service import ClassifyService
+from src.services.notification_service import NotificationService
 from src.services.qualify_service import QualifyService
 
 DEV_ENVIRONMENT = "dev"
@@ -138,7 +146,12 @@ async def lifespan(app: FastAPI):
                 ),
                 model_explorer_service=model_explorer_service,
                 model_selector_service=model_selector_service,
-                publisher_service=get_publisher_service(sqs_client=sqs_connection),
+                notify_service=NotificationService(
+                    publisher_service=get_publisher_service(sqs_client=sqs_connection),
+                    user_repository_factory=lambda session: PostgresUserNotificationRepository(
+                        session, PostgresUserMapper
+                    ),
+                ),
             ),
         ),
     )
