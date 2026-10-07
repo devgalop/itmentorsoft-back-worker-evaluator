@@ -15,11 +15,15 @@ from src.services.notification_service import NotificationService
 async def seed_user_for_notification(
     db_session,
     user_id: str,
-    email: str = "test@example.com",
+    email: str = None,
     name: str = "Test User",
 ):
     """Insert a user row for notification tests."""
     from itmentorsoft_persistence import UserEntity
+
+    # Generate unique email if not provided
+    if email is None:
+        email = f"{user_id}@test.com"
 
     user = UserEntity(
         id=user_id,
@@ -63,10 +67,11 @@ class TestNotificationServiceIntegration:
 
         # Seed a user
         user_id = f"test-user-{uuid.uuid4().hex[:8]}"
+        email = f"john.doe.{user_id[-8:]}@example.com"
         await seed_user_for_notification(
             db_session,
             user_id=user_id,
-            email="john.doe@example.com",
+            email=email,
             name="John Doe",
         )
 
@@ -103,7 +108,7 @@ class TestNotificationServiceIntegration:
         # Verify publisher was called with correct message
         publisher.publish.assert_called_once()
         call_args = publisher.publish.call_args[0][0]
-        assert call_args.recipient == "john.doe@example.com"
+        assert call_args.recipient == email
         assert call_args.subject == "¡Ya se encuentra lista tu calificación!"
         assert call_args.html_template_code == "evaluation_end"
 
@@ -168,10 +173,11 @@ class TestNotificationServiceIntegration:
 
         # Seed a user
         user_id = f"test-user-{uuid.uuid4().hex[:8]}"
+        email = f"jane.{user_id[-8:]}@example.com"
         await seed_user_for_notification(
             db_session,
             user_id=user_id,
-            email="jane@example.com",
+            email=email,
             name="Jane Smith",
         )
 

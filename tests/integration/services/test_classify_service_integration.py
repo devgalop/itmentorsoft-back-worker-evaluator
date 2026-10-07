@@ -405,4 +405,4 @@ class TestClassifyServiceIntegration:
         ]
         assert call_args.user_id == user_id
         assert call_args.classification == "intermediate"
-        assert call_args.feedback == "Mock feedback"
+        assert call_args.feedback == "Mock classification feedback"

@@ -149,6 +149,11 @@ async def _truncate_tables():
         "assessment_qualifications",
         "classification_results",
         "topic_results",
+        "assessment_answers",
+        "question_rubric_scores",
+        "questions",
+        "assessments",
+        "users",
     ]
     async with engine.begin() as conn:
         for table in tables:
