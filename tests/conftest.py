@@ -57,6 +57,7 @@ def mock_env_vars():
         "VALKEY_DB": "0",
         "EVALUATION_MODE": "normal",
         "OPENCODE_FALLBACK_MODEL": "test-fallback-model",
+        "AWS_SQS_NOTIFY_QUEUE_URL": "http://localhost:4566/queue/test-notify",
     }
     with patch.dict(os.environ, env_vars, clear=True):
         # Reload env_manager to pick up patched env vars
