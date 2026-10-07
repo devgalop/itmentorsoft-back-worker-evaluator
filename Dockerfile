@@ -7,6 +7,9 @@ RUN apk add --no-cache git
 
 COPY requirements.txt .
 
+# Bust cache to force re-fetch of git dependencies (pass --build-arg CACHE_BUST=$(date +%s))
+ARG CACHE_BUST=1
+
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src/ ./src/
