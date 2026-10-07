@@ -40,6 +40,10 @@ def mock_env_vars():
         "ASSESSMENT_QUALIFICATION_TTL": "300",
         "ASSESSMENT_MAX_QUESTIONS_NUMBER": "50",
         "DATABASE_URL": "postgresql+asyncpg://test:test@localhost:5432/test",
+        "DATABASE_USER": "test",
+        "DATABASE_PASSWORD": "test",
+        "DATABASE_HOST": "localhost",
+        "DATABASE_NAME": "test",
         "DB_POOL_SIZE": "5",
         "DB_MAX_OVERFLOW": "10",
         "DB_POOL_TIMEOUT": "30",
@@ -53,6 +57,7 @@ def mock_env_vars():
         "VALKEY_DB": "0",
         "EVALUATION_MODE": "normal",
         "OPENCODE_FALLBACK_MODEL": "test-fallback-model",
+        "AWS_SQS_NOTIFY_QUEUE_URL": "http://localhost:4566/queue/test-notify",
     }
     with patch.dict(os.environ, env_vars, clear=True):
         # Reload env_manager to pick up patched env vars

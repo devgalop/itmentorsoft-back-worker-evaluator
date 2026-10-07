@@ -149,6 +149,11 @@ async def _truncate_tables():
         "assessment_qualifications",
         "classification_results",
         "topic_results",
+        "assessment_answers",
+        "question_rubric_scores",
+        "questions",
+        "assessments",
+        "users",
     ]
     async with engine.begin() as conn:
         for table in tables:
@@ -690,4 +695,16 @@ def mock_publisher_service():
     """Mock PublisherService for service-level tests."""
     service = AsyncMock()
     service.publish = AsyncMock()
+    return service
+
+
+@pytest.fixture
+def notify_service():
+    """Mock NotificationService for service-level tests."""
+    service = AsyncMock()
+    service.send_final_classification_notification = AsyncMock(
+        return_value=MagicMock(
+            is_success=True, message="Notificación enviada correctamente"
+        )
+    )
     return service

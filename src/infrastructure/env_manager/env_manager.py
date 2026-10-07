@@ -43,6 +43,7 @@ class EnvironmentVariablesConstants:
         "VALKEY_PORT",
         "VALKEY_PASSWORD",
         "VALKEY_DB",
+        "AWS_SQS_NOTIFY_QUEUE_URL",
     ]
 
     ENVIRONMENT = os.getenv("ENVIRONMENT", "")
@@ -59,6 +60,7 @@ class EnvironmentVariablesConstants:
     AWS_SQS_CLASSIFY_DLQ_NAME = os.getenv("AWS_SQS_CLASSIFY_DLQ_NAME", "")
     AWS_SQS_CLASSIFY_QUEUE_URL = os.getenv("AWS_SQS_CLASSIFY_QUEUE_URL", "")
     AWS_SQS_CLASSIFY_DLQ_URL = os.getenv("AWS_SQS_CLASSIFY_DLQ_URL", "")
+    AWS_SQS_NOTIFY_QUEUE_URL = os.getenv("AWS_SQS_NOTIFY_QUEUE_URL", "")
     CONSUMER_MAX_MESSAGES_PER_REQUEST = os.getenv(
         "CONSUMER_MAX_MESSAGES_PER_REQUEST", ""
     )
@@ -94,6 +96,7 @@ class EnvironmentVariablesConstants:
     VALKEY_PORT = os.getenv("VALKEY_PORT", "")
     VALKEY_PASSWORD = os.getenv("VALKEY_PASSWORD", "")
     VALKEY_DB = os.getenv("VALKEY_DB", "")
+    LINK_EVALUATION = os.getenv("LINK_EVALUATION", "")
 
     @staticmethod
     def validate_mandatory_env_vars():
