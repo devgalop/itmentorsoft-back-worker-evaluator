@@ -363,3 +363,46 @@ class TestClassifyServiceIntegration:
         assert response.is_success is True
         assert "already been classified" in response.message.lower()
         mock_classification_service.classify.assert_not_called()
+
+    async def test_classify_sends_notification_after_success(
+        self,
+        db_session,
+        classification_repository,
+        mock_classification_service,
+        cache_manager_service,
+        notify_service,
+    ):
+        """Verify notification is sent after successful classification."""
+        from tests.integration.conftest import seed_classification_parent_rows
+
+        svc = self._make_classify_service(
+            classification_repository=classification_repository,
+            classification_service=mock_classification_service,
+            cache_manager_service=cache_manager_service[0],
+            notify_service=notify_service,
+        )
+
+        msg, content = _make_classify_message()
+
+        # Seed parent rows
+        user_id = msg.qualification_answer_results[0].user_id
+        assessment_id = msg.get_assessment_id()
+        await seed_classification_parent_rows(
+            db_session,
+            user_id=user_id,
+            assessment_id=assessment_id,
+        )
+
+        input_msg = _TestInputMessage(content)
+        response = await svc.classify(input_msg)
+
+        assert response.is_success is True
+
+        # Verify notification was sent
+        notify_service.send_final_classification_notification.assert_called_once()
+        call_args = notify_service.send_final_classification_notification.call_args[0][
+            0
+        ]
+        assert call_args.user_id == user_id
+        assert call_args.classification == "intermediate"
+        assert call_args.feedback == "Mock feedback"

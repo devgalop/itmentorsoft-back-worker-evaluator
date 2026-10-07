@@ -416,3 +416,164 @@ class TestQualifyServiceIntegration:
         assert response.is_success is True
         assert "already been processed" in response.message
         mock_qualifier_service.qualify_batch.assert_not_called()
+
+    async def test_qualify_saves_topic_results(
+        self,
+        db_session,
+        qualification_repository,
+        mock_qualifier_service,
+        cache_manager_service,
+        mock_publisher_service,
+    ):
+        """Verify topic results are saved to database."""
+        from tests.integration.conftest import seed_qualify_service_parent_rows
+        from sqlalchemy import text
+
+        uid = uuid.uuid4().hex[:8]
+        user_id = f"test-user-{uid}"
+        assessment_id = f"test-assessment-{uid}"
+        question_id = f"q-test-{uid}-001"
+        answer_id = f"test-answer-{uid}-001"
+
+        # Seed parent rows
+        await seed_qualify_service_parent_rows(
+            db_session,
+            user_id=user_id,
+            assessment_id=assessment_id,
+            question_id=question_id,
+            answer_id=answer_id,
+        )
+
+        # Configure mock to return results with topic
+        mock_qualifier_service.qualify_batch = AsyncMock(
+            return_value=[
+                QualifierResult(
+                    id=f"qr-{uid}",
+                    question_id=question_id,
+                    user_id=user_id,
+                    score=85,
+                    feedback="Good work",
+                    key_concepts_detected=["concept1"],
+                    misconceptions_detected=[],
+                    question_topic="mathematics",
+                    assessment_id=assessment_id,
+                    question_difficulty="medium",
+                    answer_id=answer_id,
+                )
+            ]
+        )
+
+        service = self._make_qualify_service(
+            qualification_repository=qualification_repository,
+            qualifier_service=mock_qualifier_service,
+            cache_manager_service=cache_manager_service[0],
+            publisher_service=mock_publisher_service,
+        )
+
+        request = QualifyAssessmentRequest(
+            assessment_id=assessment_id,
+            user_id=user_id,
+            created_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
+            answers=[
+                UserAssessmentAnswer(
+                    answer_id=answer_id,
+                    assessment_id=assessment_id,
+                    question_id=question_id,
+                    answer="Test answer",
+                    time_taken_seconds=60,
+                ),
+            ],
+        )
+
+        input_msg = _TestInputMessage(request.get_content())
+        response = await service.evaluate(input_msg)
+
+        assert response.is_success is True
+
+        # Verify topic result was saved
+        query = text("SELECT COUNT(*) FROM topic_results WHERE user_id = :uid")
+        count = await db_session.execute(query, {"uid": user_id})
+        assert count.scalar() >= 1
+
+    async def test_qualify_fallback_to_per_item_on_batch_failure(
+        self,
+        db_session,
+        qualification_repository,
+        mock_qualifier_service,
+        cache_manager_service,
+        mock_publisher_service,
+    ):
+        """Verify fallback to per-item qualification when batch fails."""
+        from tests.integration.conftest import seed_qualify_service_parent_rows
+        from src.models.qualify_models import BatchQualificationError
+
+        uid = uuid.uuid4().hex[:8]
+        user_id = f"test-user-{uid}"
+        assessment_id = f"test-assessment-{uid}"
+        question_id = f"q-test-{uid}-001"
+        answer_id = f"test-answer-{uid}-001"
+
+        # Seed parent rows
+        await seed_qualify_service_parent_rows(
+            db_session,
+            user_id=user_id,
+            assessment_id=assessment_id,
+            question_id=question_id,
+            answer_id=answer_id,
+        )
+
+        # Configure batch to fail
+        mock_qualifier_service.qualify_batch = AsyncMock(
+            side_effect=BatchQualificationError("Batch failed")
+        )
+
+        # Configure per-item to succeed
+        mock_qualifier_service.qualify = AsyncMock(
+            return_value=QualifierResult(
+                id=f"qr-{uid}",
+                question_id=question_id,
+                user_id=user_id,
+                score=80,
+                feedback="Fallback worked",
+                key_concepts_detected=["concept1"],
+                misconceptions_detected=[],
+                question_topic="test",
+                assessment_id=assessment_id,
+                question_difficulty="medium",
+                answer_id=answer_id,
+            )
+        )
+
+        service = self._make_qualify_service(
+            qualification_repository=qualification_repository,
+            qualifier_service=mock_qualifier_service,
+            cache_manager_service=cache_manager_service[0],
+            publisher_service=mock_publisher_service,
+        )
+
+        request = QualifyAssessmentRequest(
+            assessment_id=assessment_id,
+            user_id=user_id,
+            created_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
+            answers=[
+                UserAssessmentAnswer(
+                    answer_id=answer_id,
+                    assessment_id=assessment_id,
+                    question_id=question_id,
+                    answer="Test answer",
+                    time_taken_seconds=60,
+                ),
+            ],
+        )
+
+        input_msg = _TestInputMessage(request.get_content())
+        response = await service.evaluate(input_msg)
+
+        # Should still succeed via fallback
+        assert response.is_success is True
+
+        # Verify batch was attempted
+        mock_qualifier_service.qualify_batch.assert_called()
+
+        # Verify per-item was called as fallback
+        mock_qualifier_service.qualify.assert_called()
