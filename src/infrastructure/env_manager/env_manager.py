@@ -31,7 +31,6 @@ class EnvironmentVariablesConstants:
         "OPENCODE_API_MODELS_URL",
         "ASSESSMENT_QUALIFICATION_CHUNK_SIZE",
         "ASSESSMENT_MAX_QUESTIONS_NUMBER",
-        "DATABASE_URL",
         "DB_POOL_SIZE",
         "DB_MAX_OVERFLOW",
         "DB_POOL_TIMEOUT",
@@ -44,6 +43,10 @@ class EnvironmentVariablesConstants:
         "VALKEY_PASSWORD",
         "VALKEY_DB",
         "AWS_SQS_NOTIFY_QUEUE_URL",
+        "DATABASE_USER",
+        "DATABASE_PASSWORD",
+        "DATABASE_HOST",
+        "DATABASE_NAME",
     ]
 
     ENVIRONMENT = os.getenv("ENVIRONMENT", "")
@@ -83,7 +86,10 @@ class EnvironmentVariablesConstants:
     ASSESSMENT_MAX_QUESTIONS_NUMBER = os.getenv("ASSESSMENT_MAX_QUESTIONS_NUMBER", "")
     EVALUATION_MODE = os.getenv("EVALUATION_MODE", "normal")
 
-    DATABASE_URL = os.getenv("DATABASE_URL", "")
+    DATABASE_USER = os.getenv("DATABASE_USER", "")
+    DATABASE_PASSWORD = os.getenv("DATABASE_PASSWORD", "")
+    DATABASE_HOST = os.getenv("DATABASE_HOST", "")
+    DATABASE_NAME = os.getenv("DATABASE_NAME", "")
     DB_POOL_SIZE = os.getenv("DB_POOL_SIZE", "")
     DB_MAX_OVERFLOW = os.getenv("DB_MAX_OVERFLOW", "")
     DB_POOL_TIMEOUT = os.getenv("DB_POOL_TIMEOUT", "")

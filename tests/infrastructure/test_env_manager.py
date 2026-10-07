@@ -47,8 +47,8 @@ class TestEnvironmentVariablesConstants:
         with patch.dict(os.environ, {}, clear=True):
             for var in EnvironmentVariablesConstants._mandatory_env_vars:
                 os.environ[var] = "test_value"
-            del os.environ["DATABASE_URL"]
-            with pytest.raises(EnvironmentError, match="DATABASE_URL"):
+            del os.environ["DATABASE_USER"]
+            with pytest.raises(EnvironmentError, match="DATABASE_USER"):
                 EnvironmentVariablesConstants.validate_mandatory_env_vars()
 
     def test_validate_mandatory_env_vars_missing_valkey_host(self, mock_env_vars):
@@ -78,7 +78,10 @@ class TestEnvironmentVariablesConstants:
         mandatory = EnvironmentVariablesConstants._mandatory_env_vars
         assert "ENVIRONMENT" in mandatory
         assert "OPENCODE_API_KEY" in mandatory
-        assert "DATABASE_URL" in mandatory
+        assert "DATABASE_USER" in mandatory
+        assert "DATABASE_PASSWORD" in mandatory
+        assert "DATABASE_HOST" in mandatory
+        assert "DATABASE_NAME" in mandatory
         assert "VALKEY_HOST" in mandatory
         assert "AWS_SQS_QUALIFY_QUEUE_URL" in mandatory
 
