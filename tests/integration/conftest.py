@@ -691,3 +691,15 @@ def mock_publisher_service():
     service = AsyncMock()
     service.publish = AsyncMock()
     return service
+
+
+@pytest.fixture
+def notify_service():
+    """Mock NotificationService for service-level tests."""
+    service = AsyncMock()
+    service.send_final_classification_notification = AsyncMock(
+        return_value=MagicMock(
+            is_success=True, message="Notificación enviada correctamente"
+        )
+    )
+    return service

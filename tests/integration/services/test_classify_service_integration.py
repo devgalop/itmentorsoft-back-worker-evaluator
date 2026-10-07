@@ -62,7 +62,7 @@ class TestClassifyServiceIntegration:
         classification_repository,
         classification_service,
         cache_manager_service,
-        publisher_service=None,
+        notify_service=None,
         model_selector_service=None,
         model_explorer_service=None,
     ):
@@ -85,9 +85,9 @@ class TestClassifyServiceIntegration:
                 return_value=["test-model"]
             )
 
-        if publisher_service is None:
-            publisher_service = AsyncMock()
-            publisher_service.publish = AsyncMock()
+        if notify_service is None:
+            notify_service = AsyncMock()
+            notify_service.send_final_classification_notification = AsyncMock()
 
         def repo_factory(session):
             return classification_repository
@@ -98,7 +98,7 @@ class TestClassifyServiceIntegration:
             model_selector_service=model_selector_service,
             model_explorer_service=model_explorer_service,
             cache_service=cache_manager_service,
-            publisher_service=publisher_service,
+            notify_service=notify_service,
         )
 
     async def test_classify_saves_to_database(
@@ -107,7 +107,7 @@ class TestClassifyServiceIntegration:
         classification_repository,
         mock_classification_service,
         cache_manager_service,
-        mock_publisher_service,
+        notify_service,
     ):
         """ClassifyService with real DB, mocked LLM, verify classification saved."""
         from tests.integration.conftest import seed_classification_parent_rows
@@ -116,7 +116,7 @@ class TestClassifyServiceIntegration:
             classification_repository=classification_repository,
             classification_service=mock_classification_service,
             cache_manager_service=cache_manager_service[0],
-            publisher_service=mock_publisher_service,
+            notify_service=notify_service,
         )
 
         msg, content = _make_classify_message()
@@ -158,7 +158,7 @@ class TestClassifyServiceIntegration:
         classification_repository,
         mock_classification_service,
         cache_service,
-        mock_publisher_service,
+        notify_service,
     ):
         """Cache hit skips LLM call."""
         svc, prefix = cache_service
@@ -198,7 +198,7 @@ class TestClassifyServiceIntegration:
             classification_repository=classification_repository,
             classification_service=mock_classification_service,
             cache_manager_service=cache_mgr,
-            publisher_service=mock_publisher_service,
+            notify_service=notify_service,
         )
 
         content = json.dumps(
@@ -227,7 +227,7 @@ class TestClassifyServiceIntegration:
         classification_repository,
         mock_classification_service,
         cache_service,
-        mock_publisher_service,
+        notify_service,
     ):
         """Verify lock exists during processing."""
         from tests.integration.conftest import seed_classification_parent_rows
@@ -282,7 +282,7 @@ class TestClassifyServiceIntegration:
             classification_repository=classification_repository,
             classification_service=mock_classification_service,
             cache_manager_service=cache_mgr,
-            publisher_service=mock_publisher_service,
+            notify_service=notify_service,
         )
 
         content = json.dumps(
@@ -304,7 +304,7 @@ class TestClassifyServiceIntegration:
         classification_repository,
         mock_classification_service,
         cache_manager_service,
-        mock_publisher_service,
+        notify_service,
     ):
         """If classification already exists, skip processing."""
         from tests.integration.conftest import seed_classification_parent_rows
@@ -332,7 +332,7 @@ class TestClassifyServiceIntegration:
             classification_repository=classification_repository,
             classification_service=mock_classification_service,
             cache_manager_service=cache_manager_service[0],
-            publisher_service=mock_publisher_service,
+            notify_service=notify_service,
         )
 
         msg = ClassifyMessage(
