@@ -204,7 +204,22 @@ class TestPostgresQualificationRepository:
         await repo.save_assessment_qualification(result)
 
         # Save the same assessment_id again — should be a no-op
-        result2 = self._make_qualifier_result(assessment_id=result.assessment_id)
+        # Reuse the same IDs to properly test duplicate detection
+        from itmentorsoft_persistence import QualifierResult
+
+        result2 = QualifierResult(
+            id=f"qr-{uuid.uuid4().hex[:8]}",  # Different qualification ID
+            question_id=result.question_id,  # Same question_id
+            user_id=result.user_id,  # Same user_id
+            score=90,  # Different score to verify it's not inserted
+            feedback="Different feedback",
+            key_concepts_detected=["concept3"],
+            misconceptions_detected=[],
+            question_topic="mathematics",
+            assessment_id=result.assessment_id,  # Same assessment_id
+            question_difficulty="hard",
+            answer_id=result.answer_id,  # Same answer_id
+        )
         await repo.save_assessment_qualification(result2)
 
         # Verify only one record exists

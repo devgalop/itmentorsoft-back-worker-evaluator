@@ -34,7 +34,7 @@ class PostgresQualificationRepository(QualificationRepository):
 
     async def save_assessment_qualification(self, qualifier_result: QualifierResult):
         is_already_qualified = await self.is_already_qualified(
-            qualifier_result.assessment_id
+            qualifier_result.assessment_id, qualifier_result.question_id
         )
         if is_already_qualified:
             return
@@ -84,10 +84,18 @@ class PostgresQualificationRepository(QualificationRepository):
             for entity in question_entities
         }
 
-    async def is_already_qualified(self, assessment_id: str) -> bool:
-        smt = select(AssessmentQualificationEntity).where(
-            AssessmentQualificationEntity.assessment_id == assessment_id
-        )
+    async def is_already_qualified(
+        self, assessment_id: str, question_id: str | None = None
+    ) -> bool:
+        if question_id is None:
+            smt = select(AssessmentQualificationEntity).where(
+                AssessmentQualificationEntity.assessment_id == assessment_id
+            )
+        else:
+            smt = select(AssessmentQualificationEntity).where(
+                AssessmentQualificationEntity.assessment_id == assessment_id,
+                AssessmentQualificationEntity.question_id == question_id,
+            )
         result = await self.session_factory.execute(smt)
         entity_found = result.scalars().all()
         return bool(entity_found)
