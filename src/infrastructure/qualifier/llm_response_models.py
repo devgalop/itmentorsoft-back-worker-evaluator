@@ -6,7 +6,7 @@ class QualifierLLMResponse(BaseModel):
     """Validated LLM response for single qualification."""
 
     user_answer: str = ""
-    score: int = Field(ge=0, le=3)
+    score: int = Field(ge=0, le=5)
     feedback: str = Field(max_length=500)
     key_concepts_detected: List[str] = Field(default_factory=list)
     misconceptions_detected: List[str] = Field(default_factory=list)
@@ -25,7 +25,7 @@ class BatchQualifierLLMItem(BaseModel):
     """Validated LLM response item for batch qualification."""
 
     answer_id: str
-    score: int = Field(ge=0, le=3)
+    score: int = Field(ge=0, le=5)
     feedback: str = Field(max_length=500)
     key_concepts_detected: List[str] = Field(default_factory=list)
     misconceptions_detected: List[str] = Field(default_factory=list)
