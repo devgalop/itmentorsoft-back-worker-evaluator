@@ -269,7 +269,7 @@ class QualifyService:
             TopicResult(
                 user_id=user_id,
                 topic=topic,
-                score=round(sum(scores) / len(scores)),
+                score=sum(scores) / len(scores),
             )
             for topic, scores in topic_scores.items()
         ]
